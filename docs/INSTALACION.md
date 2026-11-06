@@ -1,0 +1,49 @@
+# Puesta en marcha y mantenimiento
+
+App: **https://elpollo619.github.io/etiquetas-qr/** · Base de datos: proyecto Supabase **`lager`** (región Zúrich).
+Para probar sin tocar datos reales: **https://elpollo619.github.io/etiquetas-qr/?demo=1** (modo demostración, solo en ese navegador; `?demo=0` lo desactiva).
+
+## Estado
+- Proyecto `lager` creado, `supabase/schema.sql` ejecutado, Site URL y Redirect URL configurados.
+- La app (`js/config.js`) usa la Project URL y la clave **publishable** (públicas por diseño). La clave `secret` /
+  `service_role` y la contraseña de la base de datos no se usan en la app y no se deben compartir.
+- «Confirm email» está **activado**: cada persona confirma su correo antes de entrar. Así nadie puede registrarse con
+  el correo de otro. Recomendado dejarlo así.
+
+## Primer administrador (una sola vez)
+Nadie es administrador automáticamente (si no, el primero en registrarse – quien sea – lo sería). En Supabase →
+**SQL Editor** ejecutar con tu correo:
+
+```sql
+insert into public.bootstrap_admins (email) values ('tu-correo@ejemplo.com') on conflict do nothing;
+```
+
+Después regístrate en la app con ese correo y confírmalo: la cuenta pasa a **Administrator** y la marca se borra sola.
+Si ya te habías registrado antes, en su lugar:
+`update public.profiles set role = 'admin', active = true where email = 'tu-correo@ejemplo.com';`
+
+## Empleados
+1. Abren la app (o escanean cualquier QR), pulsan **Konto erstellen**, confirman el correo.
+2. Quedan «wartet auf Freigabe». En **Mitarbeiter** los apruebas y eliges el rol:
+   - **Mitarbeiter**: retirar/devolver máquinas, retirar/añadir material, contar en inventarios.
+   - **Lagerverantwortlicher**: además crea/edita artículos, máquinas y ubicaciones, cambia estados, traslada,
+     corrige stock, abre/cierra inventarios, imprime etiquetas y ve el protocolo.
+   - **Administrator**: además gestiona empleados, corrige préstamos (con motivo) y puede borrar.
+3. En el móvil: abrir la web → menú del navegador → **Añadir a pantalla de inicio**.
+
+## Etiquetas QR
+- Cada etiqueta lleva solo un enlace permanente (`…/?c=M-0028`, `…/?c=INV-0001`, `…/?c=L-0003`), sin datos personales.
+  Cambiar el nombre no rompe la etiqueta; reimprimir no cambia su identidad. Las etiquetas antiguas `?id=INV-…` siguen valiendo.
+- **Etiketten** (o «Etikett drucken» en cada ficha): elegir el rollo de la Brother QL-800, imprimir o «Guardar como PDF».
+
+## Actualizar la base de datos
+Si cambia `supabase/schema.sql`: SQL Editor → New query → pegar todo → **Run** (aviso de «destructive operations» →
+«Run query»). Es seguro repetirlo: no borra datos.
+
+## Pruebas automáticas (para desarrolladores)
+`cd tests && npm install && npm test` (base de datos, PGlite) · `node --test tests/api-demo.test.mjs` (capa de datos).
+
+## Límites del plan gratuito de Supabase
+500 MB de base de datos, 1 GB de archivos (las fotos se reducen a 1600 px), pocos correos por hora con el servidor de
+correo incluido. Un proyecto sin uso durante 7 días se pausa (se reactiva en el panel). Copia de seguridad: exportar
+las listas a Excel desde la app o desde el panel de Supabase.
