@@ -1,0 +1,39 @@
+{
+    "app":  "etiquetas-qr",
+    "version":  1,
+    "exportado":  "2026-11-06T08:56:10.129Z",
+    "items":  [
+                  {
+                      "id":  "INV-0001",
+                      "name":  "CAT 6 Slim UTP Patchkabel",
+                      "short":  "",
+                      "size":  "1,5 m",
+                      "category":  "Cables de red",
+                      "location":  "Encima del armario negro · caja «Cat 6 slim 1,5 m»",
+                      "use":  "Conectar PC, impresora o teléfono IP a la red (toma de pared o switch)",
+                      "details":  "UTP · CCA · PVC · 28 AWG · Ø 4,0 mm",
+                      "color":  "Gris",
+                      "brand":  "QUALY-PATCH",
+                      "art":  "237\u0027103",
+                      "qty":  "",
+                      "min":  "",
+                      "notes":  ""
+                  },
+                  {
+                      "id":  "INV-0002",
+                      "name":  "CAT 6 Slim UTP Patchkabel",
+                      "short":  "",
+                      "size":  "2,0 m",
+                      "category":  "Cables de red",
+                      "location":  "Encima del armario negro · caja «Cat 6 slim 2,0 m»",
+                      "use":  "Conectar PC, impresora o teléfono IP a la red (toma de pared o switch)",
+                      "details":  "UTP · CCA · PVC · 28 AWG · Ø 4,0 mm",
+                      "color":  "Gris",
+                      "brand":  "QUALY-PATCH",
+                      "art":  "237\u0027104",
+                      "qty":  "",
+                      "min":  "",
+                      "notes":  ""
+                  }
+              ]
+}
