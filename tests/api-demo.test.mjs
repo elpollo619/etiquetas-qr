@@ -924,3 +924,25 @@ describe('Supabase-Implementierung (Ersatz-Client)', { skip: !hasHooks && 'modul
     assert.equal(client.calls.at(-1).storage, 'remove');
   });
 });
+
+describe('Einladungen (Demo)', () => {
+  test('Admin lädt ein und entfernt; Mitarbeiter darf nicht', async () => {
+    const api = await demo();
+    const iv = await api.addInvite('  Neu@Firma.CH ', 'lagerverantwortlicher');
+    assert.deepEqual([iv.email, iv.role], ['neu@firma.ch', 'lagerverantwortlicher']);
+    await rejects(api.addInvite('neu@firma.ch'), 'duplicate');
+    await rejects(api.addInvite('kein-mail'), 'invalid_email');
+    await rejects(api.addInvite('x@firma.ch', 'chef'), 'invalid_role');
+    assert.deepEqual((await api.listInvites()).map((i) => i.email), ['neu@firma.ch']);
+    const users = await api.demoUsers();
+    const ma = users.find((u) => u.role === 'mitarbeiter' && u.active);
+    await api.demoSwitchUser(ma.id);
+    assert.deepEqual(await api.listInvites(), []);
+    await rejects(api.addInvite('y@firma.ch'), 'not_authorized');
+    await rejects(api.deleteInvite('neu@firma.ch'), 'not_authorized');
+    await api.demoSwitchUser(users.find((u) => u.role === 'admin').id);
+    await api.deleteInvite('neu@firma.ch');
+    assert.deepEqual(await api.listInvites(), []);
+    await rejects(api.deleteInvite('neu@firma.ch'), 'not_found');
+  });
+});

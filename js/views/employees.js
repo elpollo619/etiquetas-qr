@@ -72,6 +72,21 @@ registerStrings({
     'employees.readOnly': 'Nur Administratoren können Mitarbeiter bearbeiten.',
     'employees.you': 'du',
     'employees.loansCount': '{n} Ausleihen',
+    'employees.invites': 'Einladungen',
+    'employees.invitesHint': 'Eingeladene Personen registrieren sich mit genau dieser E-Mail und wählen ihr eigenes Passwort. Nach der Bestätigung der E-Mail sind sie sofort aktiv – mit der hier gewählten Rolle. Jede Einladung gilt einmal.',
+    'employees.invitesNone': 'Keine offenen Einladungen.',
+    'employees.invite': 'Einladen',
+    'employees.inviteTitle': 'Mitarbeiter einladen',
+    'employees.inviteEmails': 'E-Mail-Adressen',
+    'employees.inviteEmailsHint': 'Eine oder mehrere, getrennt durch Komma oder neue Zeile.',
+    'employees.invited': '{n} eingeladen.',
+    'employees.inviteSkipped': 'Übersprungen: {list}',
+    'employees.inviteHasAccount': '{email} hat bereits ein Konto – bitte direkt freigeben.',
+    'employees.inviteRemove': 'Entfernen',
+    'employees.inviteRemoveTitle': 'Einladung entfernen',
+    'employees.inviteRemoveText': 'Die Einladung für {email} wird gelöscht. Registriert sich die Person später, muss sie freigegeben werden.',
+    'employees.inviteRemoved': 'Einladung entfernt.',
+    'employees.invitedOn': 'eingeladen am {d}',
   },
   pt: {
     'employees.title': 'Colaboradores',
@@ -139,6 +154,21 @@ registerStrings({
     'employees.readOnly': 'Só os administradores podem editar colaboradores.',
     'employees.you': 'tu',
     'employees.loansCount': '{n} empréstimos',
+    'employees.invites': 'Convites',
+    'employees.invitesHint': 'As pessoas convidadas registam-se com exatamente este e-mail e escolhem a sua própria palavra-passe. Depois de confirmarem o e-mail ficam logo ativas, com a função escolhida aqui. Cada convite vale uma vez.',
+    'employees.invitesNone': 'Não há convites pendentes.',
+    'employees.invite': 'Convidar',
+    'employees.inviteTitle': 'Convidar colaboradores',
+    'employees.inviteEmails': 'Endereços de e-mail',
+    'employees.inviteEmailsHint': 'Um ou vários, separados por vírgula ou nova linha.',
+    'employees.invited': '{n} convidado(s).',
+    'employees.inviteSkipped': 'Ignorados: {list}',
+    'employees.inviteHasAccount': '{email} já tem conta – aprova-a diretamente.',
+    'employees.inviteRemove': 'Remover',
+    'employees.inviteRemoveTitle': 'Remover convite',
+    'employees.inviteRemoveText': 'O convite para {email} será eliminado. Se a pessoa se registar mais tarde, terá de ser aprovada.',
+    'employees.inviteRemoved': 'Convite removido.',
+    'employees.invitedOn': 'convidado a {d}',
   },
   es: {
     'employees.title': 'Empleados',
@@ -206,6 +236,21 @@ registerStrings({
     'employees.readOnly': 'Solo los administradores pueden editar empleados.',
     'employees.you': 'tú',
     'employees.loansCount': '{n} préstamos',
+    'employees.invites': 'Invitaciones',
+    'employees.invitesHint': 'Las personas invitadas se registran con exactamente este correo y eligen su propia contraseña. Al confirmar el correo quedan activas al momento, con el rol elegido aquí. Cada invitación vale una vez.',
+    'employees.invitesNone': 'No hay invitaciones pendientes.',
+    'employees.invite': 'Invitar',
+    'employees.inviteTitle': 'Invitar empleados',
+    'employees.inviteEmails': 'Correos electrónicos',
+    'employees.inviteEmailsHint': 'Uno o varios, separados por coma o salto de línea.',
+    'employees.invited': '{n} invitado(s).',
+    'employees.inviteSkipped': 'Omitidos: {list}',
+    'employees.inviteHasAccount': '{email} ya tiene cuenta: apruébala directamente.',
+    'employees.inviteRemove': 'Quitar',
+    'employees.inviteRemoveTitle': 'Quitar invitación',
+    'employees.inviteRemoveText': 'Se borrará la invitación de {email}. Si la persona se registra más tarde, habrá que aprobarla.',
+    'employees.inviteRemoved': 'Invitación quitada.',
+    'employees.invitedOn': 'invitado el {d}',
   },
 });
 
@@ -301,10 +346,13 @@ async function listRoute(ctx) {
   const head = `<div class="page-head"><h1>${esc(t('employees.title'))}</h1></div>`;
   el.innerHTML = `<div class="page">${head}<p class="muted" role="status">${esc(t('common.loading'))}</p></div>`;
 
-  let profiles, openLoans;
+  let profiles, openLoans, invites;
   try {
-    [profiles, openLoans] = await Promise.all([api.listProfiles(), api.listLoans({ open: true })]);
+    [profiles, openLoans, invites] = await Promise.all([
+      api.listProfiles(), api.listLoans({ open: true }), admin ? api.listInvites() : Promise.resolve([]),
+    ]);
   } catch (err) { errorPage(ctx, err); return; }
+  invites = invites || [];
   profiles = profiles || [];
   const loanCount = new Map();
   const overdueCount = new Map();
@@ -335,9 +383,22 @@ async function listRoute(ctx) {
       </div>`).join('')}</div>
     </section>` : '';
 
+  const invitesHtml = admin ? `<section class="section">
+      <div class="section-head"><h2>${esc(t('employees.invites'))} (${invites.length})</h2>
+        <button type="button" class="btn sm primary" data-invite>${icon('plus')}${esc(t('employees.invite'))}</button></div>
+      <p class="hint" style="margin:0">${esc(t('employees.invitesHint'))}</p>
+      ${invites.length ? `<div class="list">${invites.map((iv) => `<div class="list-item" data-email="${esc(iv.email)}">
+        ${avatar(iv.email)}
+        <div class="li-main"><span class="li-title">${esc(iv.email)}</span>
+          <span class="li-sub">${esc(roleLabel(iv.role))}${iv.created_at ? ' · ' + esc(t('employees.invitedOn', { d: fmtDate(iv.created_at) })) : ''}</span></div>
+        <div class="li-end"><button type="button" class="btn sm ghost" data-uninvite aria-label="${esc(t('employees.inviteRemove'))}: ${esc(iv.email)}">${icon('trash')}</button></div>
+      </div>`).join('')}</div>` : `<p class="muted small" style="margin:0">${esc(t('employees.invitesNone'))}</p>`}
+    </section>` : '';
+
   el.innerHTML = `<div class="page">${head}
     ${how}
     ${pendingHtml}
+    ${invitesHtml}
     <section class="section">
       <div class="section-head"><h2>${esc(t('employees.activeList'))} (${active.length})</h2></div>
       <div class="searchbar">${icon('search')}<input type="search" data-search placeholder="${esc(t('employees.search'))}" aria-label="${esc(t('employees.search'))}"></div>
@@ -377,6 +438,57 @@ async function listRoute(ctx) {
     if (!p) return;
     const saved = await editSheet(ctx, p, { approve: true });
     if (saved) { toast(t('employees.approved')); ctx.reload(); }
+  }));
+
+  // Einladen: eine oder mehrere E-Mails mit einer Rolle
+  const inviteBtn = el.querySelector('[data-invite]');
+  if (inviteBtn) inviteBtn.addEventListener('click', async () => {
+    const byEmail = new Map(profiles.filter((p) => p.email).map((p) => [String(p.email).toLowerCase(), p]));
+    const done = await sheet({
+      title: t('employees.inviteTitle'),
+      body: `<div class="field"><label for="inv-emails">${esc(t('employees.inviteEmails'))}</label>
+          <textarea id="inv-emails" rows="3" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="name@reto-amonn.ch"></textarea>
+          <span class="hint">${esc(t('employees.inviteEmailsHint'))}</span></div>
+        <div class="field"><span class="lbl">${esc(t('employees.role'))}</span>${roleRadios('mitarbeiter', 'invrole')}</div>`,
+      actions: [
+        { label: t('btn.cancel'), kind: 'ghost', value: undefined },
+        {
+          label: t('employees.invite'), kind: 'primary', icon: 'check',
+          onClick: async (sh) => {
+            const role = (sh.querySelector('input[name="invrole"]:checked') || {}).value || 'mitarbeiter';
+            const emails = [...new Set(sh.querySelector('#inv-emails').value.split(/[\s,;]+/)
+              .map((s) => s.trim().toLowerCase()).filter(Boolean))];
+            if (!emails.length) throw Object.assign(new Error('invalid_email'), { code: 'invalid_email' });
+            let ok = 0;
+            const skipped = [];
+            for (const e of emails) {
+              const existing = byEmail.get(e);
+              if (existing) {
+                skipped.push(e);
+                if (!existing.active) toast(t('employees.inviteHasAccount', { email: e }), 'info');
+                continue;
+              }
+              try { await ctx.api.addInvite(e, role); ok++; } catch (err) { skipped.push(`${e} (${errorText(err)})`); }
+            }
+            if (!ok && skipped.length === emails.length && emails.length === 1 && !byEmail.has(emails[0])) {
+              throw Object.assign(new Error('invalid_email'), { code: 'invalid_email' });
+            }
+            if (ok) toast(t('employees.invited', { n: ok }));
+            if (skipped.length) toast(t('employees.inviteSkipped', { list: skipped.join(', ') }), 'info');
+            return ok > 0 || skipped.length > 0;
+          },
+        },
+      ],
+    });
+    if (done) ctx.reload();
+  });
+  el.querySelectorAll('[data-uninvite]').forEach((b) => b.addEventListener('click', async () => {
+    const email = b.closest('[data-email]').dataset.email;
+    const ok = await confirmSheet(t('employees.inviteRemoveTitle'), t('employees.inviteRemoveText', { email }),
+      { okLabel: t('employees.inviteRemove'), danger: true });
+    if (!ok) return;
+    try { await ctx.api.deleteInvite(email); toast(t('employees.inviteRemoved')); ctx.reload(); }
+    catch (err) { toast(errorText(err), 'error'); }
   }));
 }
 

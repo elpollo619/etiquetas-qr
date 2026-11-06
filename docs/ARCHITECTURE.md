@@ -81,6 +81,7 @@ api.demoUsers()  / api.demoSwitchUser(id)  nur im Demo-Modus
 
 api.listProfiles()                         → profiles (alle, sortiert nach Name)
 api.adminUpdateProfile(id, { full_name, role, active }) → profile
+api.listInvites() / api.addInvite(email, role) / api.deleteInvite(email)   Einladungen (nur Admins; Tabelle public.invites)
 
 api.listLocations({ includeArchived })     → location_overview, sortiert nach path
 api.getLocation(id) / api.getLocationByCode(code) → row | null

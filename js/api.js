@@ -20,7 +20,7 @@ export class LgrError extends Error {
 export const API_METHODS = Object.freeze([
   'init', 'getSession', 'onAuthChange', 'signIn', 'signUp', 'signOut', 'resetPassword', 'updatePassword',
   'getMyProfile', 'updateMyProfile', 'demoUsers', 'demoSwitchUser', 'demoReset',
-  'listProfiles', 'adminUpdateProfile',
+  'listProfiles', 'adminUpdateProfile', 'listInvites', 'addInvite', 'deleteInvite',
   'listLocations', 'getLocation', 'getLocationByCode', 'saveLocation', 'deleteLocation',
   'listMachines', 'getMachine', 'getMachineByCode', 'saveMachine', 'deleteMachine',
   'checkoutMachine', 'returnMachine', 'setMachineStatus', 'listLoans', 'correctLoan',

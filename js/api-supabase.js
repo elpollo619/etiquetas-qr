@@ -554,6 +554,20 @@ export function createApi({ LgrError, client } = {}) {
       });
     }),
 
+    // ---- Einladungen (nur Administratoren, RLS) ----
+    listInvites: wrap(async () => (await q(sb.from('invites').select('*').order('email'))) || []),
+    addInvite: wrap(async (email, role = 'mitarbeiter') => {
+      const e = String(email || '').trim().toLowerCase();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) throw E('invalid_email');
+      if (!['admin', 'lagerverantwortlicher', 'mitarbeiter'].includes(role)) throw E('invalid_role');
+      return q(sb.from('invites').insert({ email: e, role }).select('*').single());
+    }),
+    deleteInvite: wrap(async (email) => {
+      const e = String(email || '').trim().toLowerCase();
+      const rows = await q(sb.from('invites').delete().eq('email', e).select('email'));
+      if (!rows || !rows.length) throw E('not_found');
+    }),
+
     // ---- Lagerorte ----
     listLocations: wrap(async ({ includeArchived = false } = {}) => {
       const rows = await fetchAll(() => {

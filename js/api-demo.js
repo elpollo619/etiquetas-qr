@@ -1165,6 +1165,36 @@ export function createApi({ LgrError = FallbackLgrError, storage, storageKey = S
     },
     async adminUpdateProfile(id, fields) { return mutate(() => pick(coreAdminUpdateProfile(id, fields), PROFILE_COLS)); },
 
+    // ---- Einladungen (nur Administratoren) ----
+    async listInvites() {
+      return read(() => {
+        if (!isAdmin()) return [];
+        return (db.invites || []).slice().sort((a, b) => a.email.localeCompare(b.email));
+      });
+    },
+    async addInvite(email, role = 'mitarbeiter') {
+      return mutate(() => {
+        if (!isAdmin()) throw E('not_authorized');
+        const e = String(email || '').trim().toLowerCase();
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) throw E('invalid_email');
+        if (!ROLES.includes(role)) throw E('invalid_role');
+        db.invites = db.invites || [];
+        if (db.invites.some((i) => i.email === e)) throw E('duplicate');
+        const row = { email: e, role, created_at: nowIso() };
+        db.invites.push(row);
+        return { ...row };
+      });
+    },
+    async deleteInvite(email) {
+      return mutate(() => {
+        if (!isAdmin()) throw E('not_authorized');
+        const e = String(email || '').trim().toLowerCase();
+        const i = (db.invites || []).findIndex((x) => x.email === e);
+        if (i < 0) throw E('not_found');
+        db.invites.splice(i, 1);
+      });
+    },
+
     // ---- Lagerorte ----
     async listLocations({ includeArchived = false } = {}) {
       return read(() => {
