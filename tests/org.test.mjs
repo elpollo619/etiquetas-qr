@@ -354,6 +354,29 @@ test('prüfen: Fotos ohne Lagerort werden nie fotoübergreifend verknüpft', asy
   assert.equal(db2.status, 'offen');
 });
 
+test('gebäudeplan: Planbild zählt nicht als Foto, Bereiche nur beschriftet oder verknüpft, Rechte', async () => {
+  const before = await one(U.ma, `select photos_total from public.org_stats`);
+  const plan = await one(U.lv, `insert into public.photos (path, sha256, file_name, kind) values ($1, $2, 'eg.png', 'plan') returning *`,
+    [`photos/${sha(77)}.jpg`, sha(77)]);
+  assert.equal(plan.kind, 'plan');
+  const after = await one(U.ma, `select photos_total from public.org_stats`);
+  assert.equal(Number(after.photos_total), Number(before.photos_total), 'Plan nicht in Foto-Kennzahlen');
+  await fails(as(U.lv, `insert into public.photos (path, sha256, kind) values ('photos/x.png', $1, 'skizze')`, [sha(78)]), /photos_kind_chk/);
+  await fails(as(U.ma, `insert into public.floor_plans (name, photo_id) values ('EG', $1)`, [plan.id]), /row-level security/);
+  const fp = await one(U.lv, `insert into public.floor_plans (name, sort, photo_id) values ('EG', 10, $1) returning *`, [plan.id]);
+  assert.equal(fp.created_by, U.lv);
+  // Raum nur beschriftet (noch nicht angelegt) und Raum verknüpft
+  await one(U.lv, `insert into public.photo_hotspots (photo_id, x, y, w, h, label) values ($1, 0.3, 0.19, 0.4, 0.16, 'Büro 1') returning *`, [plan.id]);
+  await one(U.lv, `insert into public.photo_hotspots (photo_id, location_id, x, y, w, h, label) values ($1, $2, 0.3, 0.69, 0.4, 0.16, 'Büro 3') returning *`, [plan.id, S.space.id]);
+  await fails(as(U.lv, `insert into public.photo_hotspots (photo_id, x, y) values ($1, 0.5, 0.5)`, [plan.id]), /label_or_location/);
+  const ov = await one(U.ma, `select * from public.floor_plan_overview where id = $1`, [fp.id]);
+  assert.equal(ov.photo_path, plan.path);
+  assert.deepEqual([Number(ov.area_count), Number(ov.linked_count)], [2, 1]);
+  await fails(as(U.lv, `delete from public.photos where id = $1`, [plan.id]), /foreign key|violates/);
+  assert.equal((await as(U.lv, `delete from public.floor_plans where id = $1 returning id`, [fp.id])).rows.length, 0, 'nur Admin löscht');
+  await fails(asAnon(`select * from public.floor_plan_overview`), /permission denied/);
+});
+
 test('fotos: mit bestätigten Objekten nicht löschbar; Mitarbeiter löscht nie', async () => {
   await fails(as(U.lv, `delete from public.photos where id = $1`, [S.p1.id]), /LGR:in_use/);
   const r = await as(U.ma, `delete from public.photos where id = $1 returning id`, [S.p3.id]);

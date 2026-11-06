@@ -890,9 +890,10 @@ export function createApi({ LgrError, client } = {}) {
     }),
 
     // ---- Fotos ----
-    listPhotos: wrap(async ({ locationId, spaceId, status, ids } = {}) => {
+    listPhotos: wrap(async ({ locationId, spaceId, status, ids, kind = 'foto' } = {}) => {
       const rows = await fetchAll(() => {
         let qb = sb.from('photo_overview').select('*');
+        if (kind) qb = qb.eq('kind', kind);   // Planbilder (kind 'plan') erscheinen nicht in Fotolisten
         if (locationId) qb = qb.eq('location_id', locationId);
         if (spaceId) qb = qb.eq('root_id', spaceId);
         if (status) qb = Array.isArray(status) ? qb.in('status', status) : qb.eq('status', status);
@@ -901,7 +902,8 @@ export function createApi({ LgrError, client } = {}) {
       });
       return rows;
     }),
-    importPhoto: wrap(async (file, { locationId, folder, sha256 } = {}) => {
+    importPhoto: wrap(async (file, { locationId, folder, sha256, kind = 'foto' } = {}) => {
+      if (kind !== 'foto' && kind !== 'plan') throw E('invalid_input');
       if (!file || typeof file.size !== 'number') throw E('file_required');
       const origMime = String(file.type || '').toLowerCase() || guessImageMime(file.name);
       if (!IMAGE_MIME.includes(origMime)) throw E('file_type', origMime || '?');
@@ -912,7 +914,8 @@ export function createApi({ LgrError, client } = {}) {
       if (existing) return { photo: existing, duplicate: true };
       let body = file;
       let mime = origMime;
-      const small = await resizeImage(file, IMAGE_MAX_PX, IMAGE_QUALITY);
+      // Pläne (Strichzeichnungen) nicht als JPEG verkleinern – sonst wird die Beschriftung unscharf
+      const small = kind === 'plan' ? null : await resizeImage(file, IMAGE_MAX_PX, IMAGE_QUALITY);
       if (small) { body = small; mime = 'image/jpeg'; }
       if (body.size > MAX_UPLOAD_BYTES) throw E('file_too_large');
       const dims = await imageSize(body);
@@ -928,7 +931,7 @@ export function createApi({ LgrError, client } = {}) {
       try {
         row = await q(sb.from('photos').insert({
           location_id: locationId || null, path, sha256: sha, file_name: String(file.name || 'foto').slice(0, 255),
-          folder: trimOrNull(folder), mime, size_bytes: body.size, width: dims ? dims.w : null, height: dims ? dims.h : null,
+          folder: trimOrNull(folder), mime, size_bytes: body.size, width: dims ? dims.w : null, height: dims ? dims.h : null, kind,
         }).select('id').single());
       } catch (err) {
         if (err instanceof LgrError && err.code === 'duplicate') {
@@ -1029,11 +1032,14 @@ export function createApi({ LgrError, client } = {}) {
     }),
 
     // ---- Bereiche auf Fotos ----
-    listHotspots: wrap(async ({ photoId, photoIds } = {}) => {
+    listHotspots: wrap(async ({ photoId, photoIds, locationId } = {}) => {
       const ids = (photoIds || (photoId ? [photoId] : [])).filter(isUuid);
-      if (!ids.length) return [];
-      const rows = (await q(sb.from('photo_hotspots').select('*').in('photo_id', ids).order('created_at').order('id'))) || [];
-      const locIds = [...new Set(rows.map((r) => r.location_id))];
+      if (!ids.length && !isUuid(locationId)) return [];
+      let qb = sb.from('photo_hotspots').select('*');
+      if (ids.length) qb = qb.in('photo_id', ids);
+      if (isUuid(locationId)) qb = qb.eq('location_id', locationId);
+      const rows = (await q(qb.order('created_at').order('id'))) || [];
+      const locIds = [...new Set(rows.map((r) => r.location_id).filter(Boolean))];
       const locs = locIds.length ? (await q(sb.from('locations').select('id, code, name, type').in('id', locIds))) || [] : [];
       const byId = new Map(locs.map((l) => [l.id, l]));
       return rows.map((r) => {
@@ -1053,9 +1059,13 @@ export function createApi({ LgrError, client } = {}) {
         pick[k] = Math.round(n * 10000) / 10000;
       }
       if (has(pick, 'label')) pick.label = trimOrNull(pick.label);
+      if (has(pick, 'location_id')) pick.location_id = pick.location_id || null;
       let row;
       if (!obj.id) {
-        if (!isUuid(obj.photo_id) || !isUuid(pick.location_id)) throw E('invalid_location');
+        if (!isUuid(obj.photo_id)) throw E('not_found');
+        if (pick.location_id && !isUuid(pick.location_id)) throw E('invalid_location');
+        // auf einem Gebäudeplan darf ein Bereich zunächst nur beschriftet sein
+        if (!pick.location_id && !pick.label) throw E('name_required');
         row = await q(sb.from('photo_hotspots').insert({ photo_id: obj.photo_id, ...pick }).select('*').single());
       } else {
         if (!isUuid(obj.id)) throw E('not_found');
@@ -1063,8 +1073,41 @@ export function createApi({ LgrError, client } = {}) {
         if (!rows || !rows.length) throw await zeroRowsError('photo_hotspots', obj.id);
         row = rows[0];
       }
-      const l = await q(sb.from('locations').select('code, name, type').eq('id', row.location_id).maybeSingle());
+      const l = row.location_id ? await q(sb.from('locations').select('code, name, type').eq('id', row.location_id).maybeSingle()) : null;
       return { ...row, location_code: l ? l.code : null, location_name: l ? l.name : null, location_type: l ? l.type : null };
+    }),
+
+    // ---- Gebäudepläne (Grundriss je Stockwerk; Bild = Foto mit kind 'plan', Räume = Bereiche) ----
+    listFloorPlans: wrap(async () => (await q(sb.from('floor_plan_overview').select('*').order('sort').order('name').order('id'))) || []),
+    saveFloorPlan: wrap(async (obj) => {
+      if (!obj || typeof obj !== 'object') throw E('invalid_value');
+      const patch = {};
+      if (has(obj, 'name')) { patch.name = String(obj.name ?? '').trim(); if (!patch.name) throw E('name_required'); }
+      if (has(obj, 'sort')) patch.sort = Math.round(Number(obj.sort) || 0);
+      if (has(obj, 'notes')) patch.notes = trimOrNull(obj.notes);
+      let id = obj.id;
+      if (!id) {
+        if (!patch.name) throw E('name_required');
+        if (!isUuid(obj.photo_id)) throw E('file_required');
+        id = (await q(sb.from('floor_plans').insert({ ...patch, photo_id: obj.photo_id }).select('id').single())).id;
+      } else {
+        if (!isUuid(id)) throw E('not_found');
+        if (Object.keys(patch).length) {
+          const rows = await q(sb.from('floor_plans').update(patch).eq('id', id).select('id'));
+          if (!rows || !rows.length) throw await zeroRowsError('floor_plans', id);
+        }
+      }
+      return getOne('floor_plan_overview', 'id', id);
+    }),
+    deleteFloorPlan: wrap(async (id) => {
+      if (!isUuid(id)) throw E('not_found');
+      const rows = await q(sb.from('floor_plans').delete().eq('id', id).select('id, photo_id'));
+      if (!rows || !rows.length) throw await zeroRowsError('floor_plans', id);
+      // Planbild samt Bereichen entfernen (best effort; Bereiche hängen am Bild)
+      try {
+        const ph = await q(sb.from('photos').delete().eq('id', rows[0].photo_id).select('path'));
+        if (ph && ph[0]) { urlCache.delete(ph[0].path); await sb.storage.from(BUCKET).remove([ph[0].path]); }
+      } catch (err) { console.warn('[api] Planbild bleibt erhalten:', err); }
     }),
     deleteHotspot: wrap(async (id) => {
       if (!isUuid(id)) throw E('not_found');

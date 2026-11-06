@@ -32,6 +32,7 @@ async function rejects(promise, code, detail) {
 }
 const sha = (n) => String(n).padStart(64, 'a').slice(-64).replace(/[^0-9a-f]/g, 'b');   // wie org.test.mjs
 const jpeg = (name, n = 1) => new File([new Uint8Array([0xff, 0xd8, n, n + 1, 7])], name, { type: 'image/jpeg' });
+const png = (name, n = 1) => new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47, n])], name, { type: 'image/png' });
 const auditOf = async (api, action) => (await api.listAudit({ limit: 100000 })).filter((r) => r.action === action);
 
 // Startkategorien aus supabase/schema.sql (DO-Block «Startkategorien») – das Demo muss exakt dieselbe Liste haben
@@ -88,9 +89,9 @@ describe('Speicher-Migration und Startdaten', () => {
       audit: (await a.listAudit({ limit: 100000 })).length,
     };
     // Version 1 nachbilden: ohne neue Tabellen und Spalten
-    const v2 = JSON.parse(storage.getItem(STORAGE_KEY));
-    assert.equal(v2.version, 2);
-    const v1 = JSON.parse(JSON.stringify(v2));
+    const v3 = JSON.parse(storage.getItem(STORAGE_KEY));
+    assert.equal(v3.version, 3);
+    const v1 = JSON.parse(JSON.stringify(v3));
     v1.version = 1;
     for (const t of ORG_TABLES) delete v1[t];
     for (const l of v1.locations) for (const k of ['short_code', 'responsible_id', 'organized_at', 'organized_by', 'cover_photo_id']) delete l[k];
@@ -117,7 +118,7 @@ describe('Speicher-Migration und Startdaten', () => {
     assert.equal((await b.listInventories())[0].location_id, null);
     assertSeedCategories(await b.listCategories());
     const stored = JSON.parse(storage.getItem(STORAGE_KEY));
-    assert.equal(stored.version, 2, 'migrierter Stand gespeichert');
+    assert.equal(stored.version, 3, 'migrierter Stand gespeichert');
     for (const t of ORG_TABLES) assert.ok(Array.isArray(stored[t]), t);
     // erneut laden: keine doppelten Kategorien
     const c = fresh(storage);
@@ -446,7 +447,7 @@ describe('Lager organisieren (Ablauf wie tests/org.test.mjs)', () => {
     await api.deleteHotspot(pt.id);
     assert.deepEqual((await api.listHotspots({ photoId: S.p2.id })), []);
     // Übersichtsfoto des Raums
-    await rejects(api.saveLocation({ id: S.space.id, cover_photo_id: randomUUID() }), 'invalid_location');
+    await rejects(api.saveLocation({ id: S.space.id, cover_photo_id: randomUUID() }), 'not_found');
     await api.saveLocation({ id: S.space.id, cover_photo_id: S.p1.id });
     const lo = await api.getLocation(S.space.id);
     assert.equal(lo.cover_photo_path, S.p1.path);
@@ -581,7 +582,7 @@ describe('Regeln im Detail', () => {
     assert.equal(cleared.short_code, null);
     await rejects(api.saveLocation({ name: 'x', type: 'keller' }), 'invalid_type');
     // Verantwortliche
-    await rejects(api.saveLocation({ id: hl.id, responsible_id: randomUUID() }), 'invalid_location');
+    await rejects(api.saveLocation({ id: hl.id, responsible_id: randomUUID() }), 'not_found');
     assert.equal((await api.saveLocation({ id: hl.id, responsible_id: U.daniel })).responsible_name, 'Daniel');
     const laptop = await api.saveMachine({ name: 'Laptop ThinkPad', responsible_id: U.daniel, product_url: 'https://www.lenovo.com/ch/de/' });
     assert.deepEqual([laptop.responsible_name, laptop.is_set, laptop.product_url, laptop.component_count], ['Daniel', false, 'https://www.lenovo.com/ch/de/', 0]);
@@ -699,19 +700,29 @@ describe('Regeln im Detail', () => {
     await api.init();
     await as(api, 'luca');
     let canvasSize = null;
+    const types = [];
     globalThis.createImageBitmap = async () => ({ width: 4000, height: 3000, close() {} });
     globalThis.OffscreenCanvas = class {
       constructor(w, h) { this.width = w; this.height = h; canvasSize = [w, h]; }
       getContext() { return { fillStyle: '', fillRect() {}, drawImage() {} }; }
-      async convertToBlob(o) { return new Blob([new Uint8Array(100)], { type: o.type }); }
+      async convertToBlob(o) { types.push(o.type); return new Blob([new Uint8Array(100)], { type: o.type }); }
     };
     try {
       const f = new File([new Uint8Array(5000).fill(9)], 'IMG_0001.HEIC', { type: '' });   // Typ aus der Endung
       const orig = createHash('sha256').update(Buffer.from(await f.arrayBuffer())).digest('hex');
       const { photo } = await api.importPhoto(f, { folder: 'Handy' });
       assert.deepEqual(canvasSize, [800, 600]);
-      assert.deepEqual([photo.mime, photo.width, photo.height, photo.size_bytes, photo.sha256, photo.path, photo.file_name],
-        ['image/jpeg', 800, 600, 100, orig, `photos/${orig}.jpg`, 'IMG_0001.HEIC']);
+      assert.deepEqual([photo.mime, photo.width, photo.height, photo.size_bytes, photo.sha256, photo.path, photo.file_name, photo.kind],
+        ['image/jpeg', 800, 600, 100, orig, `photos/${orig}.jpg`, 'IMG_0001.HEIC', 'foto']);
+      // Gebäudeplan als PNG bleibt PNG (Beschriftung bleibt scharf); ein Foto als PNG wird JPEG
+      const plan = (await api.importPhoto(png('grundriss.png', 5), { kind: 'plan' })).photo;
+      assert.deepEqual([plan.kind, plan.mime, plan.width], ['plan', 'image/png', 800]);
+      assert.ok(plan.path.endsWith('.png'));
+      const fotoPng = (await api.importPhoto(png('screenshot.png', 6))).photo;
+      assert.equal(fotoPng.mime, 'image/jpeg');
+      assert.deepEqual(types, ['image/jpeg', 'image/png', 'image/jpeg']);
+      await api.deletePhoto(fotoPng.id);
+      await api.deletePhoto(plan.id);
     } finally {
       delete globalThis.createImageBitmap;
       delete globalThis.OffscreenCanvas;
@@ -722,5 +733,138 @@ describe('Regeln im Detail', () => {
     const again = fresh(storage);
     assert.equal((await again.listPhotos()).length, 1);
     assert.equal((await again.listPhotos())[0].folder, 'Handy');
+  });
+});
+
+// =============================================================================================
+describe('Gebäudeplan', () => {
+  test('Planbild zählt nicht als Foto; Plan anlegen/ändern (Lagerverantwortliche), löschen nur Admin', async () => {
+    const api = await demo();
+    await as(api, 'luca');
+    const space = await api.saveLocation({ name: 'Büro 3', type: 'raum' });
+    const foto = (await api.importPhoto(jpeg('raum.jpeg'), { locationId: space.id, sha256: sha(31) })).photo;
+    const before = await api.orgStats();
+    await rejects(api.importPhoto(png('eg.png'), { kind: 'skizze' }), 'invalid_input');
+    const { photo: plan } = await api.importPhoto(png('eg.png'), { kind: 'plan', sha256: sha(32) });
+    assert.deepEqual([plan.kind, plan.mime, plan.path, plan.location_id, plan.status], ['plan', 'image/png', `photos/${sha(32)}.png`, null, 'neu']);
+    const planInSpace = (await api.importPhoto(png('og.png', 2), { kind: 'plan', locationId: space.id, sha256: sha(33) })).photo;
+    const after = await api.orgStats();
+    assert.deepEqual([after.photos_total, after.photos_pending], [before.photos_total, before.photos_pending], 'Plan nicht in Foto-Kennzahlen');
+    const sp = (await api.listSpaces()).find((s) => s.id === space.id);
+    assert.deepEqual([sp.photos, sp.org_status], [1, 'fotos_vorhanden']);
+    assert.deepEqual((await api.listPhotos()).map((p) => p.id), [foto.id], 'Standard: nur Fotos');
+    assert.deepEqual((await api.listPhotos({ kind: 'plan' })).map((p) => p.id), [plan.id, planInSpace.id]);
+    assert.equal((await api.listPhotos({ kind: null })).length, 3);
+    // Plan anlegen
+    await as(api, 'daniel');
+    await rejects(api.saveFloorPlan({ name: 'EG', photo_id: plan.id }), 'not_authorized');
+    await as(api, 'luca');
+    await rejects(api.saveFloorPlan({ name: ' ', photo_id: plan.id }), 'name_required');
+    await rejects(api.saveFloorPlan({ name: 'x'.repeat(81), photo_id: plan.id }), 'name_required');
+    await rejects(api.saveFloorPlan({ name: 'EG' }), 'file_required');
+    await rejects(api.saveFloorPlan({ name: 'EG', photo_id: randomUUID() }), 'not_found');
+    const fp = await api.saveFloorPlan({ name: ' EG ', sort: 10, photo_id: plan.id, notes: ' Erdgeschoss ' });
+    assert.deepEqual([fp.name, fp.sort, fp.notes, fp.created_by, fp.photo_path, fp.area_count, fp.linked_count],
+      ['EG', 10, 'Erdgeschoss', U.luca, plan.path, 0, 0]);
+    await rejects(api.saveFloorPlan({ name: 'EG 2', photo_id: plan.id }), 'duplicate', 'floor_plans_photo_id_key');
+    const og = await api.saveFloorPlan({ name: 'OG', sort: 20, photo_id: planInSpace.id });
+    // Räume auf dem Plan: nur beschriftet oder mit Lagerort verknüpft
+    const h1 = await api.saveHotspot({ photo_id: plan.id, x: 0.3, y: 0.19, w: 0.4, h: 0.16, label: 'Büro 1' });
+    assert.deepEqual([h1.location_id, h1.location_code, h1.location_name, h1.label], [null, null, null, 'Büro 1']);
+    const h2 = await api.saveHotspot({ photo_id: plan.id, location_id: space.id, x: 0.3, y: 0.69, w: 0.4, h: 0.16, label: 'Büro 3' });
+    await rejects(api.saveHotspot({ photo_id: plan.id, x: 0.5, y: 0.5 }), 'name_required');
+    await rejects(api.saveHotspot({ photo_id: plan.id, x: 0.5, y: 0.5, label: '  ' }), 'name_required');
+    await rejects(api.saveHotspot({ photo_id: randomUUID(), location_id: space.id, x: 0.5, y: 0.5 }), 'not_found');
+    await rejects(api.saveHotspot({ id: h1.id, label: null }), 'invalid_value');
+    assert.equal((await api.saveHotspot({ id: h1.id, location_id: space.id })).location_code, space.code, 'Raum später verknüpft');
+    assert.equal((await api.saveHotspot({ id: h1.id, location_id: null })).location_id, null, 'wieder nur beschriftet');
+    const h3 = await api.saveHotspot({ photo_id: foto.id, location_id: space.id, x: 0.1, y: 0.1 });
+    assert.deepEqual((await api.listHotspots({ locationId: space.id })).map((h) => h.id), [h2.id, h3.id], 'alle Bereiche zu diesem Lagerort');
+    assert.deepEqual((await api.listHotspots({ photoId: plan.id, locationId: space.id })).map((h) => h.id), [h2.id]);
+    assert.deepEqual((await api.listFloorPlans()).map((f) => [f.name, f.area_count, f.linked_count]), [['EG', 2, 1], ['OG', 0, 0]]);
+    const upd = await api.saveFloorPlan({ id: fp.id, name: 'Erdgeschoss', sort: 30, photo_id: foto.id });
+    assert.deepEqual([upd.name, upd.photo_id], ['Erdgeschoss', plan.id], 'Planbild nach dem Anlegen fest');
+    assert.deepEqual((await api.listFloorPlans()).map((f) => f.name), ['OG', 'Erdgeschoss'], 'nach sort, Name');
+    // Löschschutz und Löschen
+    await rejects(api.deletePhoto(plan.id), 'in_use');
+    await rejects(api.deleteFloorPlan(fp.id), 'not_authorized');
+    await as(api, 'ana');
+    assert.deepEqual(await api.listFloorPlans(), []);
+    await as(api, 'cristian');
+    await api.deleteFloorPlan(fp.id);
+    assert.deepEqual((await api.listFloorPlans()).map((f) => f.id), [og.id]);
+    assert.deepEqual(await api.listPhotos({ kind: 'plan', ids: [plan.id] }), [], 'Planbild entfernt');
+    assert.deepEqual(await api.listHotspots({ photoId: plan.id }), [], 'Bereiche entfernt');
+    assert.equal((await api.fileUrls([plan.path])).size, 0);
+    assert.deepEqual((await api.listHotspots({ locationId: space.id })).map((h) => h.id), [h3.id]);
+    await rejects(api.deleteFloorPlan(fp.id), 'not_found');
+    const au = (await api.listAudit({ entity: 'floor_plans', entityId: fp.id })).map((r) => r.action);
+    assert.deepEqual(au, ['delete', 'update', 'insert']);
+    assert.ok((await api.listAudit({ entity: 'photos', entityId: plan.id })).some((r) => r.action === 'delete'));
+    await api.signOut();
+    await rejects(api.listFloorPlans(), 'not_authorized');
+  });
+
+  test('Datenstand Version 2 (vor Gebäudeplan) wird übernommen: bestehende Bilder sind Fotos', async () => {
+    const storage = new MemoryStorage();
+    const a = fresh(storage);
+    await a.init();
+    await as(a, 'luca');
+    const { photo } = await a.importPhoto(jpeg('alt.jpeg'), { sha256: sha(41) });
+    await a.saveHotspot({ photo_id: photo.id, location_id: (await a.getLocationByCode('L-0001')).id, x: 0.5, y: 0.5 });
+    const v2 = JSON.parse(storage.getItem(STORAGE_KEY));
+    v2.version = 2;
+    delete v2.floor_plans;
+    for (const p of v2.photos) delete p.kind;
+    storage.setItem(STORAGE_KEY, JSON.stringify(v2));
+    const b = fresh(storage);
+    assert.deepEqual((await b.listPhotos()).map((p) => [p.id, p.kind]), [[photo.id, 'foto']]);
+    assert.deepEqual(await b.listFloorPlans(), []);
+    assert.equal((await b.orgStats()).photos_total, 1);
+    assert.equal((await b.listHotspots({ photoId: photo.id })).length, 1);
+    const stored = JSON.parse(storage.getItem(STORAGE_KEY));
+    assert.deepEqual([stored.version, stored.floor_plans, stored.categories.length], [3, [], v2.categories.length]);
+  });
+});
+
+describe('KI-Regeln (Stand schema.sql)', () => {
+  test('Produktrecherche in den Notizen, Einheiten, späterer Fehlversuch, SHA mit Leerzeichen, Fotos ohne Lagerort', async () => {
+    const api = await demo();
+    await as(api, 'luca');
+    const a = (await api.importPhoto(jpeg('a.jpeg'), { sha256: sha(51) })).photo;   // beide ohne Lagerort
+    const b = (await api.importPhoto(jpeg('b.jpeg', 2), { sha256: sha(52) })).photo;
+    const c = (await api.importPhoto(jpeg('c.jpeg', 3), { sha256: sha(53) })).photo;
+    const kiste = { key: 'gleich', name: 'Kiste', kind: 'bestandsartikel', quantity: 1, quantity_certain: true, confidence: 'sicher' };
+    const r = await api.importAnalysis([
+      { sha256: ` ${sha(51).toUpperCase()} `, file: 'a.jpeg', status: 'analysiert', objects: [kiste,
+        { key: 'kabel', name: 'Kabelrolle', kind: 'bestandsartikel', quantity: 3, quantity_certain: true, unit: 'Karton',
+          product: { source: 'Hersteller', purpose: 'Verlängerung', specs: { 'Länge': '25 m', Querschnitt: '3×1,5 mm²', leer: null, IP: 44 } } },
+        { key: 'bohrer', name: 'Bohrmaschine', kind: 'einzelinventar', quantity: 1, quantity_certain: true, notes: 'Koffer rot',
+          product: { url: 'https://example.com/b', specs: { Watt: 750 } } },
+        { key: 'papier', name: 'Papier', kind: 'bestandsartikel', quantity: 5, quantity_certain: true, unit: 'Ries' }] },
+      { sha256: sha(52), file: 'b.jpeg', status: 'analysiert', objects: [kiste] },
+      { sha256: sha(53), file: 'c.jpeg', status: 'fehler', error: 'Timeout' },
+    ], 'T');
+    assert.deepEqual([r.matched, r.created, r.failed], [3, 5, 1], 'SHA mit Leerzeichen und Grossbuchstaben zugeordnet');
+    const dets = await api.listDetections({ photoId: a.id });
+    const by = (k) => dets.find((d) => d.obj_key === k);
+    const rk = await api.reviewDetection(by('gleich').id, 'bestaetigen', {});
+    assert.equal(rk.merged, 0, 'Fotos ohne Lagerort werden nie fotoübergreifend verknüpft');
+    assert.equal((await api.listDetections({ photoId: b.id }))[0].status, 'offen');
+    const rc = await api.reviewDetection(by('kabel').id, 'bestaetigen', {});
+    const kabel = await api.getArticleByCode(rc.codes[0]);
+    assert.equal(kabel.unit, 'Pkg', 'Karton → Pkg');
+    assert.equal(kabel.notes, 'Zweck: Verlängerung\nTechnische Daten (laut Hersteller): IP 44; Länge 25 m; Querschnitt 3×1,5 mm²\nErfasst aus Foto a.jpeg');
+    const rp = await api.reviewDetection(by('papier').id, 'bestaetigen', {});
+    assert.equal((await api.getArticleByCode(rp.codes[0])).unit, 'Stk', 'unbekannte Einheit → Stk');
+    const rb = await api.reviewDetection(by('bohrer').id, 'bestaetigen', {});
+    const m = await api.getMachineByCode(rb.codes[0]);
+    assert.equal(m.notes, 'Koffer rot\nTechnische Daten (laut Hersteller): Watt 750\nErfasst aus Foto a.jpeg');
+    assert.equal(m.product_url, 'https://example.com/b');
+    // späterer Fehlversuch setzt ein analysiertes Foto nicht zurück; ein neues/fehlerhaftes schon
+    const f = await api.importAnalysis([{ sha256: sha(51), status: 'fehler', error: 'Timeout' }], 'T');
+    assert.deepEqual([f.matched, f.failed], [1, 1]);
+    const pa = (await api.listPhotos({ ids: [a.id, c.id] })).map((p) => [p.file_name, p.status, p.analysis_error]);
+    assert.deepEqual(pa, [['a.jpeg', 'analysiert', null], ['c.jpeg', 'fehler', 'Timeout']]);
   });
 });

@@ -2,6 +2,7 @@
 //   'organisieren'  Zentrale: Kennzahlen (nur echte Zahlen), Hauptaktionen, Raumkarten, «Raum hinzufügen»
 //   'o/:code'       Raum oder Lagerort visuell: Übersichtsfoto mit Bereichen (Hotspots), Reiter Unterorte / Inhalt /
 //                   Fotos / Plan, «Mit KI organisieren» (ehrlich: Ablauf mit Live-Zahlen) und «Was soll ich hier verbessern?»
+//   'organisieren/plan'  Gebäudeplan: Grundriss je Stockwerk mit den Räumen als Bereiche (?plan=<id>)
 // Alles aus echten Daten. Erkennungen bleiben Vorschläge, bis jemand sie prüft. Keine erfundenen Positionen oder Zahlen.
 import { t, registerStrings, fmtNum, fmtQty, fmtDate, locale } from '../i18n.js';
 import {
@@ -11,6 +12,7 @@ import {
 import {
   LOCATION_TYPES, SPACE_PRESETS, suggestShortCode, normShortCode, orgStatusPill, confidencePill, confidenceLabel,
   detectionStatusLabel, kindLabel, photoStatusLabel, taskStatusLabel, sourceLabel, locationSubtreeIds, locationDisplayCode,
+  ORG_STATUSES, orgStatusLabel, sha256Hex,
 } from '../org-common.js';
 import * as labels from '../labels.js';
 
@@ -305,6 +307,63 @@ registerStrings({
     'organize.del.done': 'Foto gelöscht',
     'organize.del.inUseTitle': 'Foto bleibt erhalten',
     'organize.del.inUse': 'Dieses Foto hat bestätigte Objekte und bleibt als Herkunftsnachweis erhalten. Falls es falsch zugeordnet ist, verschiebe es in den richtigen Lagerort.',
+    'organize.fp.title': 'Gebäudeplan',
+    'organize.fp.sub': 'Grundriss je Stockwerk mit den Räumen. Tippe einen Raum an, um ihn zu öffnen.',
+    'organize.fp.cardN': 'Pläne: {n} · Räume verknüpft: {linked} von {areas}',
+    'organize.fp.cardNone': 'Noch kein Plan. Lade einen Grundriss hoch und zeichne die Räume ein.',
+    'organize.fp.none': 'Noch kein Gebäudeplan. Lade für jedes Stockwerk einen Grundriss (Bild) hoch und zeichne darauf die Räume ein.',
+    'organize.fp.noneRead': 'Noch kein Gebäudeplan vorhanden. Lagerverantwortliche können Pläne hochladen.',
+    'organize.fp.add': 'Plan hinzufügen',
+    'organize.fp.file': 'Planbild',
+    'organize.fp.fileHint': 'Grundriss als Bild (PNG oder JPG). Wird nicht verkleinert, damit die Beschriftung scharf bleibt.',
+    'organize.fp.name': 'Name (Stockwerk)',
+    'organize.fp.namePh': 'z. B. EG, UG, 1. OG',
+    'organize.fp.sort': 'Reihenfolge',
+    'organize.fp.sortHint': 'Kleinere Zahl = weiter vorne.',
+    'organize.fp.notes': 'Bemerkungen',
+    'organize.fp.fileRequired': 'Bitte ein Planbild wählen.',
+    'organize.fp.added': 'Plan «{name}» hinzugefügt',
+    'organize.fp.edit': 'Umbenennen / sortieren',
+    'organize.fp.saved': 'Plan gespeichert',
+    'organize.fp.delete': 'Plan löschen',
+    'organize.fp.deleteQ': 'Plan löschen?',
+    'organize.fp.deleteMsg': 'Der Plan «{name}» wird mit dem Planbild und allen eingezeichneten Bereichen gelöscht. Die Räume selbst bleiben bestehen.',
+    'organize.fp.deleted': 'Plan gelöscht',
+    'organize.fp.editRooms': 'Räume bearbeiten',
+    'organize.fp.editHint': 'Ziehe ein Rechteck über einen Raum (kurzer Tipp = Punkt). Bereich ziehen = verschieben, an den Ecken ziehen = Grösse ändern, antippen = bearbeiten oder löschen.',
+    'organize.fp.tabs': 'Stockwerke',
+    'organize.fp.planAlt': 'Grundriss {name}',
+    'organize.fp.legend': 'Legende',
+    'organize.fp.lgLinked': 'Raum angelegt (Farbe = Stand)',
+    'organize.fp.lgUnlinked': 'Nur beschriftet – Raum noch nicht angelegt',
+    'organize.fp.rooms': 'Räume auf diesem Plan',
+    'organize.fp.roomsNone': 'Auf diesem Plan sind noch keine Räume eingezeichnet.',
+    'organize.fp.roomsNoneStaff': 'Auf diesem Plan sind noch keine Räume eingezeichnet. Mit «Räume bearbeiten» ziehst du Rechtecke über die Räume.',
+    'organize.fp.notCreated': 'noch nicht angelegt',
+    'organize.fp.createLink': 'Raum anlegen und verknüpfen',
+    'organize.fp.createIntro': 'Legt einen neuen Raum (obersten Lagerort) an und verknüpft ihn mit dem Bereich «{label}» auf dem Plan.',
+    'organize.fp.created': 'Raum «{name}» angelegt und verknüpft',
+    'organize.fp.linked': 'Mit «{name}» verknüpft',
+    'organize.fp.area': 'Raum auf dem Plan',
+    'organize.fp.newArea': 'Neuer Raum auf dem Plan',
+    'organize.fp.mode.label': 'Nur beschriften (Raum noch nicht angelegt)',
+    'organize.fp.mode.existing': 'Mit bestehendem Raum verknüpfen',
+    'organize.fp.mode.new': 'Neuen Raum anlegen',
+    'organize.fp.label': 'Beschriftung',
+    'organize.fp.labelHint': 'Name auf dem Plan, z. B. «Kellerabteil 3». Bei verknüpften Räumen leer lassen = Name des Raums.',
+    'organize.fp.labelRequired': 'Bitte eine Beschriftung eingeben.',
+    'organize.fp.space': 'Raum',
+    'organize.fp.noSpaces': 'Es gibt noch keine Räume.',
+    'organize.fp.areaSaved': 'Bereich gespeichert',
+    'organize.fp.areaDeleted': 'Bereich gelöscht',
+    'organize.fp.areaDeleteMsg': 'Der Bereich «{name}» wird vom Plan entfernt. Ein verknüpfter Raum bleibt bestehen.',
+    'organize.fp.openAria': '{name} öffnen – {status}',
+    'organize.fp.unlinkedAria': '{name} – noch nicht angelegt',
+    'organize.fp.linkedLabel': 'verknüpft',
+    'organize.fp.onPlan': 'Auf dem Plan',
+    'organize.fp.onPlanAria': 'Auf dem Gebäudeplan «{name}» anzeigen',
+    'organize.fp.shapeRect': 'Rechteck auf dem Plan',
+    'organize.fp.shapePoint': 'Punkt auf dem Plan',
     'organize.open': 'Öffnen',
   },
   pt: {
@@ -594,6 +653,63 @@ registerStrings({
     'organize.del.done': 'Foto eliminada',
     'organize.del.inUseTitle': 'A foto mantém-se',
     'organize.del.inUse': 'Esta foto tem objetos confirmados e mantém-se como prova de origem. Se estiver mal atribuída, move-a para a localização certa.',
+    'organize.fp.title': 'Planta do edifício',
+    'organize.fp.sub': 'Planta de cada piso com os espaços. Toca num espaço para o abrir.',
+    'organize.fp.cardN': 'Plantas: {n} · espaços ligados: {linked} de {areas}',
+    'organize.fp.cardNone': 'Ainda não há planta. Carrega uma planta e marca nela os espaços.',
+    'organize.fp.none': 'Ainda não há planta do edifício. Carrega uma planta (imagem) por piso e marca nela os espaços.',
+    'organize.fp.noneRead': 'Ainda não há planta do edifício. Os responsáveis do armazém podem carregar plantas.',
+    'organize.fp.add': 'Adicionar planta',
+    'organize.fp.file': 'Imagem da planta',
+    'organize.fp.fileHint': 'Planta como imagem (PNG ou JPG). Não é reduzida, para que a legenda fique nítida.',
+    'organize.fp.name': 'Nome (piso)',
+    'organize.fp.namePh': 'p. ex. R/C, Cave, 1.º andar',
+    'organize.fp.sort': 'Ordem',
+    'organize.fp.sortHint': 'Número menor = mais à frente.',
+    'organize.fp.notes': 'Observações',
+    'organize.fp.fileRequired': 'Escolhe uma imagem da planta.',
+    'organize.fp.added': 'Planta «{name}» adicionada',
+    'organize.fp.edit': 'Mudar nome / ordem',
+    'organize.fp.saved': 'Planta guardada',
+    'organize.fp.delete': 'Eliminar planta',
+    'organize.fp.deleteQ': 'Eliminar a planta?',
+    'organize.fp.deleteMsg': 'A planta «{name}» é eliminada com a imagem e todas as zonas marcadas. Os espaços em si mantêm-se.',
+    'organize.fp.deleted': 'Planta eliminada',
+    'organize.fp.editRooms': 'Editar espaços',
+    'organize.fp.editHint': 'Arrasta um retângulo sobre um espaço (toque curto = ponto). Arrastar uma zona = mover, arrastar os cantos = mudar o tamanho, tocar = editar ou eliminar.',
+    'organize.fp.tabs': 'Pisos',
+    'organize.fp.planAlt': 'Planta {name}',
+    'organize.fp.legend': 'Legenda',
+    'organize.fp.lgLinked': 'Espaço criado (cor = estado)',
+    'organize.fp.lgUnlinked': 'Só legendado – espaço ainda não criado',
+    'organize.fp.rooms': 'Espaços nesta planta',
+    'organize.fp.roomsNone': 'Ainda não há espaços marcados nesta planta.',
+    'organize.fp.roomsNoneStaff': 'Ainda não há espaços marcados nesta planta. Com «Editar espaços» arrastas retângulos sobre os espaços.',
+    'organize.fp.notCreated': 'ainda não criado',
+    'organize.fp.createLink': 'Criar espaço e ligar',
+    'organize.fp.createIntro': 'Cria um novo espaço (localização de nível superior) e liga-o à zona «{label}» da planta.',
+    'organize.fp.created': 'Espaço «{name}» criado e ligado',
+    'organize.fp.linked': 'Ligado a «{name}»',
+    'organize.fp.area': 'Espaço na planta',
+    'organize.fp.newArea': 'Novo espaço na planta',
+    'organize.fp.mode.label': 'Só legendar (espaço ainda não criado)',
+    'organize.fp.mode.existing': 'Ligar a um espaço existente',
+    'organize.fp.mode.new': 'Criar novo espaço',
+    'organize.fp.label': 'Legenda',
+    'organize.fp.labelHint': 'Nome na planta, p. ex. «Arrecadação 3». Em espaços ligados, em branco = nome do espaço.',
+    'organize.fp.labelRequired': 'Introduz uma legenda.',
+    'organize.fp.space': 'Espaço',
+    'organize.fp.noSpaces': 'Ainda não há espaços.',
+    'organize.fp.areaSaved': 'Zona guardada',
+    'organize.fp.areaDeleted': 'Zona eliminada',
+    'organize.fp.areaDeleteMsg': 'A zona «{name}» é removida da planta. Um espaço ligado mantém-se.',
+    'organize.fp.openAria': 'Abrir {name} – {status}',
+    'organize.fp.unlinkedAria': '{name} – ainda não criado',
+    'organize.fp.linkedLabel': 'ligado',
+    'organize.fp.onPlan': 'Na planta',
+    'organize.fp.onPlanAria': 'Mostrar na planta «{name}»',
+    'organize.fp.shapeRect': 'Retângulo na planta',
+    'organize.fp.shapePoint': 'Ponto na planta',
     'organize.open': 'Abrir',
   },
   es: {
@@ -883,6 +999,63 @@ registerStrings({
     'organize.del.done': 'Foto eliminada',
     'organize.del.inUseTitle': 'La foto se conserva',
     'organize.del.inUse': 'Esta foto tiene objetos confirmados y se conserva como prueba de origen. Si está mal asignada, muévela a la ubicación correcta.',
+    'organize.fp.title': 'Plano del edificio',
+    'organize.fp.sub': 'Plano de cada planta con los espacios. Toca un espacio para abrirlo.',
+    'organize.fp.cardN': 'Planos: {n} · espacios vinculados: {linked} de {areas}',
+    'organize.fp.cardNone': 'Todavía no hay plano. Sube un plano y marca en él los espacios.',
+    'organize.fp.none': 'Todavía no hay plano del edificio. Sube un plano (imagen) por planta y marca en él los espacios.',
+    'organize.fp.noneRead': 'Todavía no hay plano del edificio. Los responsables del almacén pueden subir planos.',
+    'organize.fp.add': 'Añadir plano',
+    'organize.fp.file': 'Imagen del plano',
+    'organize.fp.fileHint': 'Plano como imagen (PNG o JPG). No se reduce, para que los rótulos se lean bien.',
+    'organize.fp.name': 'Nombre (planta)',
+    'organize.fp.namePh': 'p. ej. PB, Sótano, 1.ª planta',
+    'organize.fp.sort': 'Orden',
+    'organize.fp.sortHint': 'Número menor = más adelante.',
+    'organize.fp.notes': 'Observaciones',
+    'organize.fp.fileRequired': 'Elige una imagen del plano.',
+    'organize.fp.added': 'Plano «{name}» añadido',
+    'organize.fp.edit': 'Renombrar / ordenar',
+    'organize.fp.saved': 'Plano guardado',
+    'organize.fp.delete': 'Eliminar plano',
+    'organize.fp.deleteQ': '¿Eliminar el plano?',
+    'organize.fp.deleteMsg': 'El plano «{name}» se eliminará con su imagen y todas las zonas marcadas. Los espacios en sí se mantienen.',
+    'organize.fp.deleted': 'Plano eliminado',
+    'organize.fp.editRooms': 'Editar espacios',
+    'organize.fp.editHint': 'Arrastra un rectángulo sobre un espacio (toque corto = punto). Arrastrar una zona = mover, arrastrar las esquinas = cambiar el tamaño, tocar = editar o eliminar.',
+    'organize.fp.tabs': 'Plantas',
+    'organize.fp.planAlt': 'Plano {name}',
+    'organize.fp.legend': 'Leyenda',
+    'organize.fp.lgLinked': 'Espacio creado (color = estado)',
+    'organize.fp.lgUnlinked': 'Solo rotulado – espacio todavía no creado',
+    'organize.fp.rooms': 'Espacios en este plano',
+    'organize.fp.roomsNone': 'Todavía no hay espacios marcados en este plano.',
+    'organize.fp.roomsNoneStaff': 'Todavía no hay espacios marcados en este plano. Con «Editar espacios» arrastras rectángulos sobre los espacios.',
+    'organize.fp.notCreated': 'todavía no creado',
+    'organize.fp.createLink': 'Crear espacio y vincular',
+    'organize.fp.createIntro': 'Crea un espacio nuevo (ubicación de nivel superior) y lo vincula con la zona «{label}» del plano.',
+    'organize.fp.created': 'Espacio «{name}» creado y vinculado',
+    'organize.fp.linked': 'Vinculado con «{name}»',
+    'organize.fp.area': 'Espacio en el plano',
+    'organize.fp.newArea': 'Nuevo espacio en el plano',
+    'organize.fp.mode.label': 'Solo rotular (espacio todavía no creado)',
+    'organize.fp.mode.existing': 'Vincular con un espacio existente',
+    'organize.fp.mode.new': 'Crear un espacio nuevo',
+    'organize.fp.label': 'Rótulo',
+    'organize.fp.labelHint': 'Nombre en el plano, p. ej. «Trastero 3». En espacios vinculados, vacío = nombre del espacio.',
+    'organize.fp.labelRequired': 'Introduce un rótulo.',
+    'organize.fp.space': 'Espacio',
+    'organize.fp.noSpaces': 'Todavía no hay espacios.',
+    'organize.fp.areaSaved': 'Zona guardada',
+    'organize.fp.areaDeleted': 'Zona eliminada',
+    'organize.fp.areaDeleteMsg': 'La zona «{name}» se quita del plano. Un espacio vinculado se mantiene.',
+    'organize.fp.openAria': 'Abrir {name} – {status}',
+    'organize.fp.unlinkedAria': '{name} – todavía no creado',
+    'organize.fp.linkedLabel': 'vinculado',
+    'organize.fp.onPlan': 'En el plano',
+    'organize.fp.onPlanAria': 'Mostrar en el plano «{name}»',
+    'organize.fp.shapeRect': 'Rectángulo en el plano',
+    'organize.fp.shapePoint': 'Punto en el plano',
     'organize.open': 'Abrir',
   },
 });
@@ -994,9 +1167,11 @@ async function hubView(ctx) {
   const staff = can(user, 'staff');
   ctx.setTitle(t('organize.title'));
   ctx.el.innerHTML = loadingHtml();
-  let stats, spaces;
+  let stats, spaces, plans;
   try {
-    [stats, spaces] = await Promise.all([api.orgStats(), api.listSpaces()]);
+    [stats, spaces, plans] = await Promise.all([api.orgStats(), api.listSpaces(),
+      // Gebäudeplan ist nicht kritisch: ohne Pläne-Methode (oder bei Fehler) bleibt die Karte weg
+      typeof api.listFloorPlans === 'function' ? api.listFloorPlans().catch(() => null) : null]);
   } catch (err) { showError(ctx, err); return; }
   stats = stats || {};
   spaces = spaces || [];
@@ -1052,6 +1227,23 @@ async function hubView(ctx) {
   const howto = [1, 2, 3, 4, 5, 6].map((i) =>
     `<li><b>${esc(t('organize.howto.t' + i))}</b> – ${esc(t('organize.howto.d' + i))}</li>`).join('');
 
+  // Karte «Gebäudeplan» (vor den Raumkarten); für Mitarbeiter nur, wenn es Pläne gibt
+  let planCard = '';
+  if (Array.isArray(plans) && (plans.length || staff)) {
+    const areas = plans.reduce((s, p) => s + num(p.area_count), 0);
+    const linked = plans.reduce((s, p) => s + num(p.linked_count), 0);
+    planCard = `<article class="org-space org-fp-card">
+      <div class="org-space-media">${plans.length && plans[0].photo_path
+        ? thumbHtml(plans[0].photo_path, t('organize.fp.planAlt', { name: plans[0].name }), 'org-space-img org-fp-thumb', 'layers')
+        : `<div class="org-space-img org-noimg" aria-hidden="true">${icon('layers')}</div>`}</div>
+      <div class="org-space-body">
+        <h3><a class="org-space-link" href="#/organisieren/plan">${icon('layers')} ${esc(t('organize.fp.title'))}</a></h3>
+        <div class="small muted">${esc(plans.length ? t('organize.fp.cardN', { n: fmtNum(plans.length), linked: fmtNum(linked), areas: fmtNum(areas) }) : t('organize.fp.cardNone'))}</div>
+        ${plans.length ? `<div class="row">${plans.map((p) => `<span class="pill pill-muted">${esc(p.name)}</span>`).join('')}</div>` : ''}
+      </div>
+    </article>`;
+  }
+
   ctx.el.innerHTML = `<div class="page org">
     <div class="page-head">
       <div><h1>${esc(t('organize.title'))}</h1><div class="sub">${esc(t('organize.sub'))}</div></div>
@@ -1074,8 +1266,8 @@ async function hubView(ctx) {
     <section class="section" aria-labelledby="org-sp-h">
       <div class="section-head"><h2 id="org-sp-h">${esc(t('organize.spaces'))} (${fmtNum(spaces.length)})</h2>
         ${staff ? `<button type="button" class="btn sm" data-add-space>${icon('plus')}${esc(t('organize.addSpace'))}</button>` : ''}</div>
-      ${spaces.length ? `<div class="org-spaces">${spaces.map(spaceCard).join('')}</div>`
-        : emptyHtml(t(staff ? 'organize.noSpaces' : 'organize.noSpacesRead'), staff
+      ${planCard || spaces.length ? `<div class="org-spaces">${planCard}${spaces.map(spaceCard).join('')}</div>` : ''}
+      ${spaces.length ? '' : emptyHtml(t(staff ? 'organize.noSpaces' : 'organize.noSpacesRead'), staff
           ? `<button type="button" class="btn primary" data-add-space>${icon('plus')}${esc(t('organize.addSpace'))}</button>` : '')}
     </section>
   </div>`;
@@ -1259,6 +1451,18 @@ async function loadSpace(ctx, code) {
     loc.cover_photo_id ? soft(api.listHotspots({ photoId: loc.cover_photo_id }), []) : [],
     staff ? soft(api.listProfiles(), []) : [],
   ]);
+  // Liegt dieser Lagerort auf einem Gebäudeplan? (Bereiche, die auf ihn zeigen, auf einem Planbild)
+  let onPlan = null;
+  if (typeof api.listFloorPlans === 'function') {
+    const mine = await soft(api.listHotspots({ locationId: loc.id }), []);
+    if ((mine || []).length) {
+      const plans = (await Promise.resolve(api.listFloorPlans()).catch(() => [])) || [];
+      for (const pl of plans) {
+        const h = mine.find((x) => x.photo_id === pl.photo_id && x.location_id === loc.id);
+        if (h) { onPlan = { plan: pl, h }; break; }
+      }
+    }
+  }
   const myPhotos = (photos || []).filter((p) => sub.has(p.location_id));
   let cover = null;
   if (loc.cover_photo_id) {
@@ -1282,6 +1486,7 @@ async function loadSpace(ctx, code) {
     hotspots: hotspots || [],
     profiles: profiles || [],
     cover,
+    onPlan,
     warn,
   };
   // Gegenstände je Lagerort (direkt) – für Zähler der Unterorte
@@ -1344,6 +1549,7 @@ async function spaceView(ctx) {
     <nav class="org-crumbs small" aria-label="${esc(t('organize.path'))}">${crumbs.join('<span aria-hidden="true">›</span>')}</nav>
     <section class="card org-head">
       <div class="org-head-top">
+        ${S.onPlan ? onPlanPreviewHtml(S.onPlan.plan, S.onPlan.h) : ''}
         <span class="org-head-ic" aria-hidden="true">${typeIcon(loc.type)}</span>
         <div class="org-head-main">
           <h1>${esc(loc.name)}</h1>
@@ -1380,6 +1586,7 @@ async function spaceView(ctx) {
     <div class="org-panel" id="org-panel" role="tabpanel" aria-labelledby="org-tab-${tab}" data-panel></div>
   </div>`;
   const root = ctx.el.firstElementChild;
+  if (S.onPlan) hydrateThumbs(root.querySelector('.org-onplan'), ctx.api);
 
   renderVisual(ctx, S, root.querySelector('[data-visual]'));
 
@@ -1443,22 +1650,30 @@ function hotspotLabel(S, h) {
   const l = S.byId.get(h.location_id);
   return clean(h.label) || (l && l.name) || h.location_name || '?';
 }
+/** Geometrie eines Bereichs (relativ 0–1); Rechteck oder Punkt (w/h null) – immer innerhalb des Bildes */
+function hsGeom(h) {
+  const x = clamp01(h.x), y = clamp01(h.y);
+  return num(h.w) > 0 && num(h.h) > 0
+    ? { x, y, w: Math.min(num(h.w), 1 - x) || 0.01, h: Math.min(num(h.h), 1 - y) || 0.01 }
+    : { x, y, w: null, h: null };
+}
+const geomStyle = (g) => (g.w ? `left:${pct(g.x)};top:${pct(g.y)};width:${pct(g.w)};height:${pct(g.h)}` : `left:${pct(g.x)};top:${pct(g.y)}`);
+const geomData = (g) => `data-x="${g.x}" data-y="${g.y}" data-w="${g.w ?? ''}" data-h="${g.h ?? ''}"`;
+const HANDLES = ['nw', 'ne', 'sw', 'se'].map((c) => `<span class="org-hs-handle ${c}" data-handle="${c}" aria-hidden="true"></span>`).join('');
+
 function hotspotHtml(S, h, editing) {
   const l = S.byId.get(h.location_id);
   const label = hotspotLabel(S, h);
   const code = (l && l.code) || h.location_code || '';
-  const isRect = num(h.w) > 0 && num(h.h) > 0;
-  const x = clamp01(h.x), y = clamp01(h.y);
-  const style = isRect
-    ? `left:${pct(x)};top:${pct(y)};width:${pct(Math.min(num(h.w), 1 - x))};height:${pct(Math.min(num(h.h), 1 - y))}`
-    : `left:${pct(x)};top:${pct(y)}`;
-  const cls = `org-hs ${isRect ? 'rect' : 'pt'}${x > 0.7 ? ' lbl-left' : ''}`;
+  const g = hsGeom(h);
+  const cls = `org-hs ${g.w ? 'rect' : 'pt'}${g.x > 0.7 ? ' lbl-left' : ''}`;
   const inner = `<span class="org-hs-label">${esc(label)}</span>`;
   if (editing) {
-    return `<button type="button" class="${cls}" style="${style}" data-hs="${esc(h.id)}" aria-label="${esc(t('organize.hs.editAria', { name: label }))}">${inner}</button>`;
+    return `<button type="button" class="${cls}" style="${geomStyle(g)}" data-hs="${esc(h.id)}" ${geomData(g)}
+      aria-label="${esc(t('organize.hs.editAria', { name: label }))}">${inner}${g.w ? HANDLES : ''}</button>`;
   }
   const readable = l ? locationDisplayCode(l) : code;
-  return `<a class="${cls}" style="${style}" href="#/o/${enc(code)}" aria-label="${esc(t('organize.hs.openAria', { name: label, code: readable }))}">${inner}</a>`;
+  return `<a class="${cls}" style="${geomStyle(g)}" href="#/o/${enc(code)}" aria-label="${esc(t('organize.hs.openAria', { name: label, code: readable }))}">${inner}</a>`;
 }
 
 function renderVisual(ctx, S, box) {
@@ -1507,12 +1722,10 @@ function renderVisual(ctx, S, box) {
         if (img) openLightbox(img.src, loc.name);
       });
     } else {
-      bindDrawing(stage, layer, (shape) => newHotspotSheet(ctx, S, shape));
-      layer.addEventListener('click', (e) => {
-        const b = e.target.closest('[data-hs]');
-        if (!b) return;
-        const h = S.hotspots.find((x) => x.id === b.dataset.hs);
-        if (h) editHotspotSheet(ctx, S, h);
+      bindAreaEditor(stage, layer, {
+        onDraw: (shape) => newHotspotSheet(ctx, S, shape),
+        onEdit: (id) => { const h = S.hotspots.find((x) => x.id === id); if (h) editHotspotSheet(ctx, S, h); },
+        onChange: (id, g, revert) => saveGeometry(ctx, S.hotspots, id, g, revert),
       });
     }
   }
@@ -1526,51 +1739,105 @@ function renderVisual(ctx, S, box) {
   box.querySelectorAll('[data-cover]').forEach((b) => b.addEventListener('click', () => coverSheet(ctx, S)));
 }
 
-/** Zeichnen: Rechteck ziehen oder kurz tippen (= Punkt). Koordinaten relativ 0–1 zur Bildfläche. */
-function bindDrawing(stage, layer, onShape) {
-  let start = null;
-  let draft = null;
-  let pid = null;
+/** Neue Geometrie eines Bereichs speichern (nach Verschieben/Grösse ändern); bei Fehler zurücksetzen. */
+async function saveGeometry(ctx, list, id, g, revert) {
+  try {
+    await ctx.api.saveHotspot({ id, x: g.x, y: g.y, w: g.w, h: g.h });
+    const h = list.find((x) => x.id === id);
+    if (h) Object.assign(h, { x: g.x, y: g.y, w: g.w, h: g.h });
+  } catch (err) { revert(); toast(errorText(err), 'error'); }
+}
+
+/** Bereichs-Editor (Übersichtsfoto und Gebäudeplan): auf freier Fläche Rechteck ziehen oder kurz tippen (= Punkt);
+ *  bestehenden Bereich ziehen = verschieben, an den Ecken ziehen = Grösse ändern, antippen = bearbeiten.
+ *  Koordinaten relativ 0–1 zur Bildfläche. Tastatur: Enter/Leertaste auf einem Bereich öffnet «bearbeiten». */
+function bindAreaEditor(stage, layer, { onDraw, onEdit, onChange }) {
+  let op = null;
   const at = (e) => {
     const r = stage.getBoundingClientRect();
     return { x: clamp01((e.clientX - r.left) / r.width), y: clamp01((e.clientY - r.top) / r.height), cx: e.clientX, cy: e.clientY };
   };
-  const cleanup = () => {
-    if (draft) draft.remove();
-    draft = null; start = null;
-    if (pid !== null) { try { stage.releasePointerCapture(pid); } catch (e) { /* egal */ } }
-    pid = null;
+  const readG = (el) => ({ x: +el.dataset.x, y: +el.dataset.y, w: el.dataset.w ? +el.dataset.w : null, h: el.dataset.h ? +el.dataset.h : null });
+  const apply = (el, g) => {
+    el.setAttribute('style', geomStyle(g) + (el.dataset.c ? `;--c:${el.dataset.c}` : ''));
+    el.dataset.x = g.x; el.dataset.y = g.y; el.dataset.w = g.w ?? ''; el.dataset.h = g.h ?? '';
+    el.classList.toggle('lbl-left', g.x > 0.7);
+  };
+  const finish = () => {
+    if (!op) return null;
+    const o = op;
+    op = null;
+    if (o.draft) o.draft.remove();
+    if (o.el) o.el.classList.remove('dragging');
+    try { stage.releasePointerCapture(o.pid); } catch (e) { /* egal */ }
+    return o;
   };
   stage.addEventListener('pointerdown', (e) => {
-    if (e.target.closest('[data-hs]')) return;
-    if (e.button !== undefined && e.button !== 0) return;
+    if (op || (e.button !== undefined && e.button !== 0)) return;
     if (!stage.querySelector('img[src]')) return;
+    const handle = e.target.closest('[data-handle]');
+    const el = e.target.closest('[data-hs]');
     e.preventDefault();
-    start = at(e);
-    pid = e.pointerId;
-    try { stage.setPointerCapture(pid); } catch (err) { /* egal */ }
-    draft = document.createElement('div');
-    draft.className = 'org-draft';
-    draft.style.left = pct(start.x); draft.style.top = pct(start.y);
-    layer.appendChild(draft);
+    const p = at(e);
+    if (el) op = { kind: handle ? 'resize' : 'move', corner: handle ? handle.dataset.handle : null, el, orig: readG(el) };
+    else {
+      const d = document.createElement('div');
+      d.className = 'org-draft';
+      d.style.left = pct(p.x); d.style.top = pct(p.y);
+      layer.appendChild(d);
+      op = { kind: 'draw', draft: d };
+    }
+    Object.assign(op, { start: p, pid: e.pointerId, moved: false, cur: null });
+    try { stage.setPointerCapture(e.pointerId); } catch (err) { /* egal */ }
   });
   stage.addEventListener('pointermove', (e) => {
-    if (!start || e.pointerId !== pid) return;
+    if (!op || e.pointerId !== op.pid) return;
     const p = at(e);
-    draft.style.left = pct(Math.min(start.x, p.x)); draft.style.top = pct(Math.min(start.y, p.y));
-    draft.style.width = pct(Math.abs(p.x - start.x)); draft.style.height = pct(Math.abs(p.y - start.y));
+    if (!op.moved && Math.hypot(p.cx - op.start.cx, p.cy - op.start.cy) > 6) { op.moved = true; if (op.el) op.el.classList.add('dragging'); }
+    if (op.kind === 'draw') {
+      const s = op.start;
+      Object.assign(op.draft.style, { left: pct(Math.min(s.x, p.x)), top: pct(Math.min(s.y, p.y)), width: pct(Math.abs(p.x - s.x)), height: pct(Math.abs(p.y - s.y)) });
+      return;
+    }
+    if (!op.moved) return;
+    const o = op.orig;
+    const dx = p.x - op.start.x, dy = p.y - op.start.y;
+    let g;
+    if (op.kind === 'move') {
+      g = o.w ? { ...o, x: Math.max(0, Math.min(1 - o.w, o.x + dx)), y: Math.max(0, Math.min(1 - o.h, o.y + dy)) }
+        : { ...o, x: clamp01(o.x + dx), y: clamp01(o.y + dy) };
+    } else {
+      let x1 = o.x, y1 = o.y, x2 = o.x + o.w, y2 = o.y + o.h;
+      if (op.corner.includes('w')) x1 = p.x; else x2 = p.x;
+      if (op.corner.includes('n')) y1 = p.y; else y2 = p.y;
+      const x = Math.min(x1, x2), y = Math.min(y1, y2);
+      g = { x, y, w: Math.max(0.01, Math.min(Math.abs(x2 - x1), 1 - x)), h: Math.max(0.01, Math.min(Math.abs(y2 - y1), 1 - y)) };
+    }
+    op.cur = g;
+    apply(op.el, g);
   });
   stage.addEventListener('pointerup', (e) => {
-    if (!start || e.pointerId !== pid) return;
+    if (!op || e.pointerId !== op.pid) return;
     const p = at(e);
-    const s = start;
-    cleanup();
-    const moved = Math.hypot(p.cx - s.cx, p.cy - s.cy);
-    const w = Math.abs(p.x - s.x), h = Math.abs(p.y - s.y);
-    if (moved < 12 || w < 0.01 || h < 0.01) onShape({ x: s.x, y: s.y, w: null, h: null });
-    else onShape({ x: Math.min(s.x, p.x), y: Math.min(s.y, p.y), w, h });
+    const o = finish();
+    if (o.kind === 'draw') {
+      const s = o.start;
+      const w = Math.abs(p.x - s.x), h = Math.abs(p.y - s.y);
+      if (!o.moved || Math.hypot(p.cx - s.cx, p.cy - s.cy) < 12 || w < 0.01 || h < 0.01) onDraw({ x: s.x, y: s.y, w: null, h: null });
+      else onDraw({ x: Math.min(s.x, p.x), y: Math.min(s.y, p.y), w, h });
+    } else if (o.moved && o.cur) onChange(o.el.dataset.hs, o.cur, () => apply(o.el, o.orig));
+    else onEdit(o.el.dataset.hs);
   });
-  stage.addEventListener('pointercancel', cleanup);
+  stage.addEventListener('pointercancel', () => {
+    const o = finish();
+    if (o && o.el && o.moved) apply(o.el, o.orig);
+  });
+  // Tastatur (Klick ohne Zeiger, detail 0): Bereich bearbeiten
+  layer.addEventListener('click', (e) => {
+    if (e.detail !== 0) return;
+    const el = e.target.closest('[data-hs]');
+    if (el) onEdit(el.dataset.hs);
+  });
   stage.addEventListener('dragstart', (e) => e.preventDefault());
 }
 
@@ -2670,9 +2937,429 @@ async function improveSheet(ctx, S) {
 }
 
 // ---------------------------------------------------------------------------
+// Gebäudeplan ('organisieren/plan') – Grundriss je Stockwerk, Räume als Bereiche auf dem Planbild
+// ---------------------------------------------------------------------------
+// Farben je Organisationsstand. Der Plan ist immer eine Strichzeichnung auf Weiss (auch im Dunkel-Modus),
+// deshalb feste Farben statt Themenvariablen.
+const STATUS_COLOR = {
+  nicht_erfasst: '#7d7b74', fotos_vorhanden: '#4f7396', in_analyse: '#b87d00',
+  zu_pruefen: '#c0392b', in_organisation: '#1e6fb0', organisiert: '#1f8a4c',
+};
+const LINKED_COLOR = '#4f7396';
+const planUi = { editing: null };
+const PLAN_HREF = (id) => '#/organisieren/plan' + (id ? '?plan=' + enc(id) : '');
+
+/** Kurzcode-Vorschlag für einen neuen Raum aus dem Namen («Kellerabteil 3» → «K3», «Büro» → «BU»), frei auf oberster Ebene */
+function suggestRoomCode(name, used) {
+  const words = norm(name).toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim().split(' ').filter(Boolean);
+  let base = words.length >= 2 ? words.slice(0, 3).map((w) => w[0]).join('') : (words[0] || '').slice(0, 2);
+  base = base.slice(0, 8);
+  if (!base) return '';
+  if (!used.has(base)) return base;
+  for (let n = 2; n < 100; n++) { const c = (base + n).slice(0, 10); if (!used.has(c)) return c; }
+  return '';
+}
+function planAreaName(P, h) {
+  const sp = h.location_id ? P.spaceById.get(h.location_id) : null;
+  return clean(h.label) || (sp && sp.name) || h.location_name || '?';
+}
+function planAreaColor(P, h) {
+  if (!h.location_id) return null;
+  const sp = P.spaceById.get(h.location_id);
+  return (sp && STATUS_COLOR[sp.org_status]) || LINKED_COLOR;
+}
+function planAreaHtml(P, h, editing) {
+  const g = hsGeom(h);
+  const sp = h.location_id ? P.spaceById.get(h.location_id) : null;
+  const name = planAreaName(P, h);
+  const color = planAreaColor(P, h);
+  const cls = `org-hs org-fp ${g.w ? 'rect' : 'pt'} ${h.location_id ? 'linked' : 'unlinked'}${g.x > 0.7 ? ' lbl-left' : ''}`;
+  const style = geomStyle(g) + (color ? `;--c:${color}` : '');
+  const inner = `<span class="org-hs-label">${esc(name)}</span>`;
+  if (editing) {
+    return `<button type="button" class="${cls}" style="${style}" data-hs="${esc(h.id)}" ${geomData(g)}${color ? ` data-c="${color}"` : ''}
+      aria-label="${esc(t('organize.hs.editAria', { name }))}">${inner}${g.w ? HANDLES : ''}</button>`;
+  }
+  const code = (sp && sp.code) || h.location_code;
+  if (h.location_id && code) {
+    return `<a class="${cls}" style="${style}" href="#/o/${enc(code)}"
+      aria-label="${esc(t('organize.fp.openAria', { name, status: sp ? orgStatusLabel(sp.org_status) : t('organize.fp.linkedLabel') }))}">${inner}</a>`;
+  }
+  if (P.staff) return `<button type="button" class="${cls}" style="${style}" data-unlinked="${esc(h.id)}" aria-label="${esc(t('organize.fp.unlinkedAria', { name }))}">${inner}</button>`;
+  return `<span class="${cls}" style="${style}" role="img" aria-label="${esc(t('organize.fp.unlinkedAria', { name }))}">${inner}</span>`;
+}
+function planStageHtml(plan, inner, extraCls = '') {
+  const ar = num(plan.photo_width) && num(plan.photo_height) ? num(plan.photo_width) / num(plan.photo_height) : 1.414;
+  return `<div class="org-plan-stage${extraCls}" data-stage style="--ar:${ar.toFixed(5)}">
+    ${thumbHtml(plan.photo_path, t('organize.fp.planAlt', { name: plan.name }), 'org-plan-img', 'layers')}<div class="org-layer" data-layer>${inner}</div></div>`;
+}
+
+async function planView(ctx) {
+  const { api, user } = ctx;
+  const staff = can(user, 'staff');
+  ctx.setTitle(t('organize.fp.title'));
+  ctx.el.innerHTML = loadingHtml();
+  let plans, spaces;
+  try { [plans, spaces] = await Promise.all([api.listFloorPlans(), api.listSpaces()]); } catch (err) { showError(ctx, err); return; }
+  plans = plans || [];
+  spaces = spaces || [];
+  let hotspots = [];
+  if (plans.length) {
+    try { hotspots = (await api.listHotspots({ photoIds: plans.map((p) => p.photo_id) })) || []; } catch (err) { toast(errorText(err), 'error'); }
+  }
+  const P = { plans, spaces, spaceById: new Map(spaces.map((s) => [s.id, s])), hotspots, staff, admin: can(user, 'admin') };
+  let cur = plans.find((p) => p.id === qget(ctx, 'plan')) || plans[0] || null;
+
+  ctx.el.innerHTML = `<div class="page org">
+    <a class="back-link" href="#/organisieren">${icon('back')}${esc(t('organize.title'))}</a>
+    <div class="page-head">
+      <div><h1>${esc(t('organize.fp.title'))}</h1><div class="sub">${esc(t('organize.fp.sub'))}</div></div>
+      ${staff ? `<div class="actions"><button type="button" class="btn${plans.length ? '' : ' primary'}" data-addplan>${icon('plus')}${esc(t('organize.fp.add'))}</button></div>` : ''}
+    </div>
+    ${plans.length ? `<div class="tabs org-tabs" role="tablist" aria-label="${esc(t('organize.fp.tabs'))}">
+      ${plans.map((p) => `<button type="button" class="tab" role="tab" id="fp-tab-${esc(p.id)}" data-plan="${esc(p.id)}" aria-controls="fp-panel"
+        aria-selected="${p.id === cur.id}" tabindex="${p.id === cur.id ? 0 : -1}">${esc(p.name)}</button>`).join('')}
+    </div>
+    <div class="org-panel" id="fp-panel" role="tabpanel" aria-labelledby="fp-tab-${esc(cur.id)}" data-panel></div>`
+    : emptyHtml(t(staff ? 'organize.fp.none' : 'organize.fp.noneRead'), staff
+      ? `<button type="button" class="btn primary" data-addplan>${icon('plus')}${esc(t('organize.fp.add'))}</button>` : '')}
+  </div>`;
+  const root = ctx.el.firstElementChild;
+  root.querySelectorAll('[data-addplan]').forEach((b) => b.addEventListener('click', () => addPlanSheet(ctx, P)));
+  if (!cur) return;
+  const panel = root.querySelector('[data-panel]');
+  const tabs = [...root.querySelectorAll('[data-plan]')];
+  const select = (id, focus) => {
+    cur = plans.find((p) => p.id === id) || cur;
+    tabs.forEach((b) => { const on = b.dataset.plan === cur.id; b.setAttribute('aria-selected', String(on)); b.tabIndex = on ? 0 : -1; if (on && focus) b.focus(); });
+    panel.setAttribute('aria-labelledby', 'fp-tab-' + cur.id);
+    try { history.replaceState(null, '', PLAN_HREF(cur.id)); } catch (e) { /* egal */ }
+    renderPlanPanel(ctx, P, panel, cur);
+  };
+  tabs.forEach((b, i) => {
+    b.addEventListener('click', () => select(b.dataset.plan));
+    b.addEventListener('keydown', (e) => {
+      let j = null;
+      if (e.key === 'ArrowRight') j = (i + 1) % tabs.length;
+      else if (e.key === 'ArrowLeft') j = (i - 1 + tabs.length) % tabs.length;
+      else if (e.key === 'Home') j = 0;
+      else if (e.key === 'End') j = tabs.length - 1;
+      if (j !== null) { e.preventDefault(); select(tabs[j].dataset.plan, true); }
+    });
+  });
+  renderPlanPanel(ctx, P, panel, cur);
+}
+
+function renderPlanPanel(ctx, P, panel, plan) {
+  const editing = P.staff && planUi.editing === plan.id;
+  const areas = P.hotspots.filter((h) => h.photo_id === plan.photo_id);
+  const cmp = collator();
+  const sorted = [...areas].sort((a, b) => cmp(planAreaName(P, a), planAreaName(P, b)));
+  const legend = `<div class="org-fp-legend small" aria-label="${esc(t('organize.fp.legend'))}">
+      <span><i class="org-fp-sw linked" style="--c:${LINKED_COLOR}"></i>${esc(t('organize.fp.lgLinked'))}</span>
+      <span><i class="org-fp-sw unlinked"></i>${esc(t('organize.fp.lgUnlinked'))}</span>
+      ${ORG_STATUSES.map((s) => `<span><i class="org-fp-sw linked" style="--c:${STATUS_COLOR[s]}"></i>${esc(orgStatusLabel(s))}</span>`).join('')}
+    </div>`;
+  const roomRow = (h) => {
+    const sp = h.location_id ? P.spaceById.get(h.location_id) : null;
+    const name = planAreaName(P, h);
+    const code = (sp && sp.code) || h.location_code;
+    const sw = `<i class="org-fp-sw ${h.location_id ? 'linked' : 'unlinked'}"${h.location_id ? ` style="--c:${planAreaColor(P, h)}"` : ''} aria-hidden="true"></i>`;
+    if (h.location_id && code) {
+      return `<li><a class="list-item" href="#/o/${enc(code)}">${sw}<div class="li-main"><span class="li-title">${esc(name)}</span>
+        <span class="li-sub">${esc([sp && (sp.code_path || sp.short_code), code].filter(Boolean).join(' · '))}</span></div>
+        <div class="li-end">${sp ? orgStatusPill(sp.org_status) : ''}</div></a></li>`;
+    }
+    return `<li><div class="list-item">${sw}<div class="li-main"><span class="li-title">${esc(name)}</span>
+      <span class="li-sub">${esc(t('organize.fp.notCreated'))}</span></div>
+      ${P.staff ? `<div class="li-end"><button type="button" class="btn sm" data-create="${esc(h.id)}">${icon('plus')}${esc(t('organize.fp.createLink'))}</button></div>` : ''}</div></li>`;
+  };
+  panel.innerHTML = `<div class="stack">
+    ${P.staff ? `<div class="row org-panel-tools">
+      <button type="button" class="btn sm${editing ? ' primary' : ''}" data-fpedit aria-pressed="${editing}">${icon(editing ? 'check' : 'edit')}${esc(t(editing ? 'organize.doneEditing' : 'organize.fp.editRooms'))}</button>
+      <div class="row">
+        <button type="button" class="btn sm" data-fprename>${icon('edit')}${esc(t('organize.fp.edit'))}</button>
+        ${P.admin ? `<button type="button" class="btn sm danger-outline" data-fpdelete>${icon('trash')}${esc(t('organize.fp.delete'))}</button>` : ''}
+      </div>
+    </div>` : ''}
+    ${editing ? `<div class="alert warn" role="status">${icon('edit')}<span>${esc(t('organize.fp.editHint'))}</span></div>` : ''}
+    ${plan.notes ? `<p class="small muted org-pre">${esc(plan.notes)}</p>` : ''}
+    <div class="org-plan-scroll">${planStageHtml(plan, areas.map((h) => planAreaHtml(P, h, editing)).join(''), editing ? ' editing' : '')}</div>
+    ${legend}
+    <section class="section">
+      <h2>${esc(t('organize.fp.rooms'))} (${fmtNum(areas.length)})</h2>
+      ${sorted.length ? `<ul class="list org-fp-rooms">${sorted.map(roomRow).join('')}</ul>`
+        : `<p class="muted small">${esc(t(P.staff ? 'organize.fp.roomsNoneStaff' : 'organize.fp.roomsNone'))}</p>`}
+    </section>
+  </div>`;
+  hydrateThumbs(panel, ctx.api);
+  const stage = panel.querySelector('[data-stage]');
+  const layer = stage.querySelector('[data-layer]');
+  bindStageImage(stage);
+  if (editing) {
+    bindAreaEditor(stage, layer, {
+      onDraw: (shape) => planAreaSheet(ctx, P, plan, { shape }),
+      onEdit: (id) => { const h = P.hotspots.find((x) => x.id === id); if (h) planAreaSheet(ctx, P, plan, { h }); },
+      onChange: (id, g, revert) => saveGeometry(ctx, P.hotspots, id, g, revert),
+    });
+  } else {
+    layer.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-unlinked]');
+      if (!b) return;
+      const h = P.hotspots.find((x) => x.id === b.dataset.unlinked);
+      if (h) linkRoomSheet(ctx, P, h);
+    });
+  }
+  panel.querySelectorAll('[data-create]').forEach((b) => b.addEventListener('click', () => {
+    const h = P.hotspots.find((x) => x.id === b.dataset.create);
+    if (h) linkRoomSheet(ctx, P, h);
+  }));
+  const eb = panel.querySelector('[data-fpedit]');
+  if (eb) eb.addEventListener('click', () => {
+    planUi.editing = planUi.editing === plan.id ? null : plan.id;
+    renderPlanPanel(ctx, P, panel, plan);
+    const nb = panel.querySelector('[data-fpedit]');
+    if (nb) nb.focus();
+  });
+  const rb = panel.querySelector('[data-fprename]');
+  if (rb) rb.addEventListener('click', () => editPlanSheet(ctx, plan));
+  const db = panel.querySelector('[data-fpdelete]');
+  if (db) db.addEventListener('click', async () => {
+    if (!(await confirmSheet(t('organize.fp.deleteQ'), t('organize.fp.deleteMsg', { name: plan.name }), { okLabel: t('btn.delete'), danger: true }))) return;
+    try {
+      await ctx.api.deleteFloorPlan(plan.id);
+      toast(t('organize.fp.deleted'));
+      ctx.go('organisieren/plan');
+    } catch (err) { toast(errorText(err), 'error'); }
+  });
+}
+
+function newRoomFieldsHtml(P, idp, name) {
+  const used = new Set(P.spaces.map((s) => s.short_code).filter(Boolean));
+  return `<div class="form">
+    <div class="field full"><label for="${idp}-name">${esc(t('organize.f.name'))} <span aria-hidden="true">*</span></label>
+      <input id="${idp}-name" type="text" maxlength="120" autocomplete="off" value="${esc(name || '')}"></div>
+    <div class="field"><label for="${idp}-short">${esc(t('organize.f.short'))}</label>
+      <input id="${idp}-short" type="text" maxlength="10" autocomplete="off" autocapitalize="characters" spellcheck="false"
+        value="${esc(suggestRoomCode(name || '', used))}" aria-describedby="${idp}-short-h"></div>
+    <div class="field"><label for="${idp}-type">${esc(t('organize.f.type'))}</label><select id="${idp}-type">${typeOptions('raum')}</select></div>
+    <div class="hint field full" id="${idp}-short-h">${esc(t('organize.f.shortHint'))}</div>
+  </div>`;
+}
+/** Kurzcode-Vorschlag folgt dem Namen, bis jemand selbst einen Kurzcode eingibt */
+function bindRoomCodeSuggest(root, P, idp) {
+  const used = new Set(P.spaces.map((s) => s.short_code).filter(Boolean));
+  const nameInp = root.querySelector(`#${idp}-name`);
+  const shortInp = root.querySelector(`#${idp}-short`);
+  let touched = false;
+  shortInp.addEventListener('input', () => { touched = true; });
+  nameInp.addEventListener('input', () => { if (!touched) shortInp.value = suggestRoomCode(nameInp.value, used); });
+}
+async function createRoom(ctx, root, idp) {
+  const r = readNewLoc(root, idp);
+  if (r.error) { const f = root.querySelector(r.field); if (f) f.focus(); throw Object.assign(new Error(r.error), { msg: r.error }); }
+  return ctx.api.saveLocation({ name: r.name, type: r.type, short_code: r.short_code, parent_id: null });
+}
+function spaceOptions(P, selected) {
+  return P.spaces.map((s) => `<option value="${esc(s.id)}"${s.id === selected ? ' selected' : ''}>${esc(s.name)}${s.short_code ? ' · ' + esc(s.short_code) : ''}</option>`).join('');
+}
+
+/** Nur beschrifteter Raum → Raum anlegen (oberster Lagerort) oder mit bestehendem Raum verknüpfen */
+async function linkRoomSheet(ctx, P, h) {
+  if (!P.staff) return;
+  const label = planAreaName(P, h);
+  let createdId = null;
+  const body = `<p class="small">${esc(t('organize.fp.createIntro', { label }))}</p>
+    <div class="radio-cards" role="radiogroup">
+      <label class="radio-card"><input type="radio" name="lmode" value="new" checked><span><b>${esc(t('organize.fp.mode.new'))}</b></span></label>
+      <label class="radio-card"><input type="radio" name="lmode" value="existing"${P.spaces.length ? '' : ' disabled'}>
+        <span><b>${esc(t('organize.fp.mode.existing'))}</b>${P.spaces.length ? '' : `<small>${esc(t('organize.fp.noSpaces'))}</small>`}</span></label>
+    </div>
+    <div data-new>${newRoomFieldsHtml(P, 'lr', label)}</div>
+    <div class="field" data-existing hidden><label for="lr-space">${esc(t('organize.fp.space'))}</label><select id="lr-space">${spaceOptions(P, null)}</select></div>`;
+  const res = await sheet({
+    title: t('organize.fp.createLink'), body,
+    actions: [
+      { label: t('btn.cancel'), kind: 'ghost', value: null },
+      { label: t('btn.save'), kind: 'primary', icon: 'check', onClick: async (el) => {
+        const mode = el.querySelector('input[name=lmode]:checked').value;
+        let locId, name;
+        if (mode === 'existing') {
+          locId = el.querySelector('#lr-space').value;
+          name = (P.spaceById.get(locId) || {}).name;
+        } else if (createdId) { locId = createdId; name = clean(el.querySelector('#lr-name').value); } else {
+          let row;
+          try { row = await createRoom(ctx, el, 'lr'); } catch (err) { if (err.msg) return sheetError(el, err.msg); throw err; }
+          createdId = row.id; locId = row.id; name = row.name;
+        }
+        if (!locId) return sheetError(el, t('err.invalid_location'));
+        await ctx.api.saveHotspot({ id: h.id, location_id: locId });
+        return { mode, name };
+      } },
+    ],
+    onOpen: (el) => {
+      bindRoomCodeSuggest(el, P, 'lr');
+      el.querySelectorAll('input[name=lmode]').forEach((r) => r.addEventListener('change', () => {
+        if (!r.checked) return;
+        el.querySelector('[data-new]').hidden = r.value !== 'new';
+        el.querySelector('[data-existing]').hidden = r.value !== 'existing';
+      }));
+    },
+  });
+  if (res && res.name !== undefined) {
+    toast(res.mode === 'new' ? t('organize.fp.created', { name: res.name }) : t('organize.fp.linked', { name: res.name || '' }));
+    ctx.reload();
+  } else if (createdId) ctx.reload();
+}
+
+/** Bereich auf dem Plan: neu (gezeichnet) oder bestehend – nur beschriften / mit Raum verknüpfen / neuen Raum anlegen */
+async function planAreaSheet(ctx, P, plan, { shape, h }) {
+  const isNew = !h;
+  const curMode = h ? (h.location_id ? 'existing' : 'label') : 'label';
+  let createdId = null;
+  const modes = ['label', 'existing', 'new'];
+  const body = `
+    ${isNew ? `<p class="small muted">${icon(shape.w ? 'grid' : 'pin')} ${esc(t(shape.w ? 'organize.fp.shapeRect' : 'organize.fp.shapePoint'))}</p>` : ''}
+    <div class="field"><label for="pa-label">${esc(t('organize.fp.label'))}</label>
+      <input id="pa-label" type="text" maxlength="80" autocomplete="off" value="${esc(h ? h.label || '' : '')}" aria-describedby="pa-label-h">
+      <span class="hint" id="pa-label-h">${esc(t('organize.fp.labelHint'))}</span></div>
+    <div class="radio-cards" role="radiogroup">${modes.map((m) => `<label class="radio-card">
+      <input type="radio" name="pmode" value="${m}"${m === curMode ? ' checked' : ''}${m === 'existing' && !P.spaces.length ? ' disabled' : ''}>
+      <span><b>${esc(t('organize.fp.mode.' + m))}</b></span></label>`).join('')}</div>
+    <div class="field" data-pm="existing"${curMode === 'existing' ? '' : ' hidden'}><label for="pa-space">${esc(t('organize.fp.space'))}</label>
+      <select id="pa-space">${spaceOptions(P, h && h.location_id)}</select></div>
+    <div data-pm="new" hidden>${newRoomFieldsHtml(P, 'pn', h ? h.label || '' : '')}</div>`;
+  const actions = [];
+  if (!isNew) actions.push({ label: t('btn.delete'), kind: 'danger', icon: 'trash', value: 'delete' });
+  actions.push({ label: t('btn.save'), kind: 'primary', icon: 'check', onClick: async (el) => {
+    const mode = el.querySelector('input[name=pmode]:checked').value;
+    const label = clean(el.querySelector('#pa-label').value) || null;
+    let locId = null;
+    if (mode === 'existing') locId = el.querySelector('#pa-space').value || null;
+    else if (mode === 'new') {
+      if (createdId) locId = createdId;
+      else {
+        let row;
+        try { row = await createRoom(ctx, el, 'pn'); } catch (err) { if (err.msg) return sheetError(el, err.msg); throw err; }
+        createdId = row.id; locId = row.id;
+      }
+    }
+    if (!locId && !label) { el.querySelector('#pa-label').focus(); return sheetError(el, t('organize.fp.labelRequired')); }
+    if (isNew) {
+      await ctx.api.saveHotspot({ photo_id: plan.photo_id, location_id: locId, x: shape.x, y: shape.y, w: shape.w || null, h: shape.h || null, label });
+    } else {
+      await ctx.api.saveHotspot({ id: h.id, location_id: locId, label });
+    }
+    return 'saved';
+  } });
+  const r = await sheet({
+    title: t(isNew ? 'organize.fp.newArea' : 'organize.fp.area'), body, actions,
+    onOpen: (el) => {
+      bindRoomCodeSuggest(el, P, 'pn');
+      const labelInp = el.querySelector('#pa-label');
+      const nameInp = el.querySelector('#pn-name');
+      labelInp.addEventListener('input', () => { if (!nameInp.dataset.touched) { nameInp.value = labelInp.value; nameInp.dispatchEvent(new Event('input')); } });
+      nameInp.addEventListener('keydown', () => { nameInp.dataset.touched = '1'; });
+      el.querySelectorAll('input[name=pmode]').forEach((x) => x.addEventListener('change', () => {
+        if (!x.checked) return;
+        el.querySelectorAll('[data-pm]').forEach((b) => { b.hidden = b.dataset.pm !== x.value; });
+      }));
+    },
+  });
+  if (r === 'saved') { toast(t('organize.fp.areaSaved')); ctx.reload(); return; }
+  if (createdId) { ctx.reload(); return; }
+  if (r === 'delete') {
+    if (!(await confirmSheet(t('organize.hs.deleteQ'), t('organize.fp.areaDeleteMsg', { name: planAreaName(P, h) }), { okLabel: t('btn.delete'), danger: true }))) return;
+    try { await ctx.api.deleteHotspot(h.id); toast(t('organize.fp.areaDeleted')); ctx.reload(); } catch (err) { toast(errorText(err), 'error'); }
+  }
+}
+
+async function addPlanSheet(ctx, P) {
+  const nextSort = P.plans.reduce((m, p) => Math.max(m, num(p.sort)), 0) + (P.plans.length ? 1 : 0);
+  let photoId = null;   // bei Wiederholung nicht erneut hochladen
+  const body = `<div class="form">
+    <div class="field full"><label for="fp-file">${esc(t('organize.fp.file'))} <span aria-hidden="true">*</span></label>
+      <input id="fp-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif" aria-describedby="fp-file-h">
+      <span class="hint" id="fp-file-h">${esc(t('organize.fp.fileHint'))}</span></div>
+    <div class="field"><label for="fp-name">${esc(t('organize.fp.name'))} <span aria-hidden="true">*</span></label>
+      <input id="fp-name" type="text" maxlength="60" autocomplete="off" placeholder="${esc(t('organize.fp.namePh'))}"></div>
+    <div class="field"><label for="fp-sort">${esc(t('organize.fp.sort'))}</label>
+      <input id="fp-sort" type="number" step="1" value="${nextSort}" aria-describedby="fp-sort-h"><span class="hint" id="fp-sort-h">${esc(t('organize.fp.sortHint'))}</span></div>
+  </div>`;
+  const row = await sheet({
+    title: t('organize.fp.add'), body,
+    actions: [
+      { label: t('btn.cancel'), kind: 'ghost', value: null },
+      { label: t('btn.save'), kind: 'primary', icon: 'upload', onClick: async (el) => {
+        const file = el.querySelector('#fp-file').files[0];
+        const name = clean(el.querySelector('#fp-name').value);
+        if (!file && !photoId) return sheetError(el, t('organize.fp.fileRequired'));
+        if (!name) { el.querySelector('#fp-name').focus(); return sheetError(el, t('err.name_required')); }
+        if (!photoId) {
+          const r = await ctx.api.importPhoto(file, { kind: 'plan', sha256: await sha256Hex(file) });
+          photoId = r && r.photo && r.photo.id;
+        }
+        if (!photoId) return sheetError(el, t('err.invalid_file'));
+        return ctx.api.saveFloorPlan({ name, sort: Math.round(num(el.querySelector('#fp-sort').value)), photo_id: photoId });
+      } },
+    ],
+    onOpen: (el) => {
+      const f = el.querySelector('#fp-file');
+      const n = el.querySelector('#fp-name');
+      f.addEventListener('change', () => { photoId = null; if (!n.value && f.files[0]) n.value = f.files[0].name.replace(/\.[^.]+$/, '').toUpperCase().slice(0, 60); });
+    },
+  });
+  if (row && row.id) { toast(t('organize.fp.added', { name: row.name })); ctx.go('organisieren/plan?plan=' + enc(row.id)); }
+}
+
+async function editPlanSheet(ctx, plan) {
+  const body = `<div class="form">
+    <div class="field"><label for="fe-name">${esc(t('organize.fp.name'))}</label>
+      <input id="fe-name" type="text" maxlength="60" autocomplete="off" value="${esc(plan.name)}"></div>
+    <div class="field"><label for="fe-sort">${esc(t('organize.fp.sort'))}</label>
+      <input id="fe-sort" type="number" step="1" value="${esc(num(plan.sort))}" aria-describedby="fe-sort-h"><span class="hint" id="fe-sort-h">${esc(t('organize.fp.sortHint'))}</span></div>
+    <div class="field full"><label for="fe-notes">${esc(t('organize.fp.notes'))}</label><textarea id="fe-notes" maxlength="2000">${esc(plan.notes || '')}</textarea></div>
+  </div>`;
+  const ok = await sheet({
+    title: t('organize.fp.edit'), body,
+    actions: [
+      { label: t('btn.cancel'), kind: 'ghost', value: false },
+      { label: t('btn.save'), kind: 'primary', icon: 'check', onClick: async (el) => {
+        const name = clean(el.querySelector('#fe-name').value);
+        if (!name) return sheetError(el, t('err.name_required'));
+        await ctx.api.saveFloorPlan({ id: plan.id, name, sort: Math.round(num(el.querySelector('#fe-sort').value)),
+          notes: String(el.querySelector('#fe-notes').value || '').trim() || null });
+        return true;
+      } },
+    ],
+  });
+  if (ok === true) { toast(t('organize.fp.saved')); ctx.reload(); }
+}
+
+/** Kleines Vorschaubild «Auf dem Plan»: Ausschnitt um den Raum, Raum hervorgehoben */
+function onPlanPreviewHtml(plan, h) {
+  const g = hsGeom(h);
+  const cx = g.w ? g.x + g.w / 2 : g.x, cy = g.w ? g.y + g.h / 2 : g.y;
+  const z = Math.max(1, Math.min(4, 0.45 / Math.max(g.w || 0.08, g.h || 0.08)));
+  const left = Math.max(1 - z, Math.min(0, 0.5 - cx * z)) * 100;
+  const top = Math.max(1 - z, Math.min(0, 0.5 - cy * z)) * 100;
+  const ar = num(plan.photo_width) && num(plan.photo_height) ? num(plan.photo_width) / num(plan.photo_height) : 1.414;
+  return `<a class="org-onplan" href="${PLAN_HREF(plan.id)}" aria-label="${esc(t('organize.fp.onPlanAria', { name: plan.name }))}">
+    <span class="org-onplan-view" style="--ar:${ar.toFixed(5)}">
+      <span class="org-onplan-inner" style="width:${(z * 100).toFixed(2)}%;height:${(z * 100).toFixed(2)}%;left:${left.toFixed(2)}%;top:${top.toFixed(2)}%">
+        ${thumbHtml(plan.photo_path, '', 'org-plan-img', 'layers')}
+        <span class="org-onplan-mark ${g.w ? 'rect' : 'pt'}" style="${geomStyle(g)}"></span>
+      </span>
+    </span>
+    <span class="small"><b>${esc(t('organize.fp.onPlan'))}</b> · ${esc(plan.name)} ${icon('chevron')}</span>
+  </a>`;
+}
+
+// ---------------------------------------------------------------------------
 // Routen
 // ---------------------------------------------------------------------------
 export const routes = {
   'organisieren': (ctx) => hubView(ctx),
+  'organisieren/plan': (ctx) => planView(ctx),
   'o/:code': (ctx) => spaceView(ctx),
 };

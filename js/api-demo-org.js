@@ -1,13 +1,14 @@
 // «Lager organisieren» im Demo-Modus (Vertrag: docs/ARCHITECTURE.md, Abschnitt «Erweiterung «Lager organisieren»»).
 // Regeln, Rechte, Fehlercodes und Protokoll wie supabase/schema.sql:
-//   Tabellen categories, photos, detections, photo_hotspots, org_tasks, set_components (+ neue Spalten),
+//   Tabellen categories, photos (kind foto|plan), detections, photo_hotspots, org_tasks, set_components,
+//   floor_plans (Gebäudeplan, Ansicht floor_plan_overview) + neue Spalten,
 //   Trigger check_category_parent, photo_insert_defaults, photo_delete_guard, org_task_status,
 //   Funktionen import_photo_analysis, set_photo_status, add_detection, review_detection, set_location_organized,
 //   category_by_path, location_root, Ansichten category_paths, photo_overview, detection_overview,
 //   org_task_overview, space_overview, org_stats.
 // Eingaben/Rückgaben wie js/api-supabase.js. Geladen von js/api-demo.js: installOrgDemo(api, interna).
 
-export const ORG_TABLES = Object.freeze(['categories', 'photos', 'detections', 'photo_hotspots', 'org_tasks', 'set_components']);
+export const ORG_TABLES = Object.freeze(['categories', 'photos', 'detections', 'photo_hotspots', 'org_tasks', 'set_components', 'floor_plans']);
 
 // Startkategorien – exakt der DO-Block «Startkategorien» in supabase/schema.sql (sort = Position × 10)
 export const START_CATEGORIES = Object.freeze([
@@ -32,7 +33,11 @@ export const START_CATEGORIES = Object.freeze([
 // Spalten wie in schema.sql
 const CATEGORY_COLS = ['id', 'parent_id', 'name', 'sort', 'archived', 'created_by', 'created_at', 'updated_at'];
 const PHOTO_COLS = ['id', 'location_id', 'path', 'sha256', 'file_name', 'folder', 'mime', 'size_bytes', 'width', 'height', 'status',
-  'analysis_error', 'analysis_source', 'analyzed_at', 'scene', 'area', 'observations', 'recommendations', 'uploaded_by', 'created_at'];
+  'analysis_error', 'analysis_source', 'analyzed_at', 'scene', 'area', 'observations', 'recommendations', 'uploaded_by', 'created_at',
+  'kind'];
+const FLOOR_PLAN_COLS = ['id', 'name', 'sort', 'photo_id', 'notes', 'created_by', 'created_at', 'updated_at'];
+const PHOTO_KINDS = ['foto', 'plan'];   // photos_kind_chk; Planbilder zählen nicht als Fotos
+const isFoto = (p) => (p.kind ?? 'foto') === 'foto';
 const DETECTION_COLS = ['id', 'photo_id', 'obj_key', 'source', 'name', 'kind', 'category_id', 'category_text', 'brand', 'model',
   'serial_no', 'text_read', 'quantity', 'quantity_certain', 'unit', 'condition', 'confidence', 'pos_x', 'pos_y', 'part_of_key',
   'notes', 'product', 'status', 'article_id', 'machine_id', 'location_ref_id', 'target_location_id', 'merged_into',
@@ -51,17 +56,40 @@ const TASK_RANK = { offen: 0, erledigt: 1, verworfen: 2 };
 const REVIEW_UNITS = ['Stk', 'm', 'm²', 'kg', 'l', 'Rolle', 'Pkg', 'Paar', 'Set'];   // review_detection, Bestandsartikel
 const PACK_UNITS = ['Pack', 'Packung', 'Paket', 'Karton'];
 const reviewUnit = (u) => (REVIEW_UNITS.includes(u) ? u : PACK_UNITS.includes(u) ? 'Pkg' : 'Stk');
-// wie public.product_summary(): Zweck und technische Daten laut Quelle
+// jsonb-Semantik: Schlüssel nach Bytelänge, dann bytewise sortiert; Textausgabe wie jsonb_each_text / jsonb::text
+const UTF8 = typeof TextEncoder === 'function' ? new TextEncoder() : null;
+function jsonbKeys(o) {
+  const b = (s) => (UTF8 ? UTF8.encode(s) : Array.from(String(s), (ch) => ch.charCodeAt(0)));
+  return Object.keys(o).sort((x, y) => {
+    const A = b(x); const B = b(y);
+    if (A.length !== B.length) return A.length - B.length;
+    for (let i = 0; i < A.length; i++) if (A[i] !== B[i]) return A[i] - B[i];
+    return 0;
+  });
+}
+function jsonbOut(v) {
+  if (v === null || v === undefined) return 'null';
+  if (Array.isArray(v)) return `[${v.map(jsonbOut).join(', ')}]`;
+  if (typeof v === 'object') return `{${jsonbKeys(v).map((k) => `${JSON.stringify(k)}: ${jsonbOut(v[k])}`).join(', ')}}`;
+  return JSON.stringify(v);
+}
+// wie public.product_summary(): «Zweck: …» und «Technische Daten (laut <Quelle>): k v; …» (JSON-null-Werte fallen weg)
 function productSummary(p) {
   if (!p || typeof p !== 'object' || Array.isArray(p)) return null;
-  const lines = [];
-  if (typeof p.purpose === 'string') lines.push('Zweck: ' + p.purpose);
-  const specs = p.specs && typeof p.specs === 'object' && !Array.isArray(p.specs) ? Object.entries(p.specs) : [];
-  if (specs.length) {
-    lines.push('Technische Daten (laut ' + (p.source ?? 'Hersteller') + '): '
-      + specs.map(([k, v]) => k + ' ' + (typeof v === 'string' ? v : JSON.stringify(v))).join('; '));
+  const purpose = typeof p.purpose === 'string' ? `Zweck: ${p.purpose}` : null;
+  let specs = null;
+  if (p.specs && typeof p.specs === 'object' && !Array.isArray(p.specs)) {
+    const parts = [];
+    for (const k of jsonbKeys(p.specs)) {
+      const v = p.specs[k];
+      if (v === null || v === undefined) continue;   // key || ' ' || null → null → string_agg überspringt
+      parts.push(`${k} ${typeof v === 'string' ? v : jsonbOut(v)}`);
+    }
+    const src = p.source === null || p.source === undefined ? 'Hersteller' : (typeof p.source === 'string' ? p.source : jsonbOut(p.source));
+    if (parts.length) specs = `Technische Daten (laut ${src}): ${parts.join('; ')}`;
   }
-  return lines.length ? lines.join('\n') : null;
+  const out = [purpose, specs].filter((s) => s !== null).join('\n');
+  return out === '' ? null : out;
 }
 const IMAGE_MIME = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/heic', 'image/heif'];
 const IMAGE_EXT = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif', heic: 'image/heic', heif: 'image/heif' };
@@ -145,8 +173,9 @@ async function sha256Hex(blob) {
   const hash = await subtle.digest('SHA-256', await blob.arrayBuffer());
   return [...new Uint8Array(hash)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
-// Bild verkleinern (wie uploadAttachment im Demo) und Masse zurückgeben; null = nicht möglich
-async function resizeWithSize(file, maxPx, quality) {
+// Bild verkleinern (wie uploadAttachment im Demo) und Masse zurückgeben; null = nicht möglich.
+// type: 'image/jpeg' (Fotos) oder 'image/png' (Gebäudepläne als PNG bleiben PNG – Beschriftung bleibt scharf)
+async function resizeWithSize(file, maxPx, quality, type = 'image/jpeg') {
   if (typeof createImageBitmap !== 'function') return null;
   let bmp;
   try { bmp = await createImageBitmap(file, { imageOrientation: 'from-image' }); } catch {
@@ -169,9 +198,9 @@ async function resizeWithSize(file, maxPx, quality) {
     ctx.fillRect(0, 0, w, h);
     ctx.drawImage(bmp, 0, 0, w, h);
     const blob = typeof canvas.convertToBlob === 'function'
-      ? await canvas.convertToBlob({ type: 'image/jpeg', quality })
-      : await new Promise((res) => canvas.toBlob(res, 'image/jpeg', quality));
-    return blob && blob.size ? { blob, width: w, height: h } : null;
+      ? await canvas.convertToBlob({ type, quality })
+      : await new Promise((res) => canvas.toBlob(res, type, quality));
+    return blob && blob.size ? { blob, width: w, height: h, mime: type } : null;
   } catch {
     return null;
   } finally {
@@ -202,6 +231,7 @@ export function upgradeDb(db, at) {
   fill(db.articles, { category_id: null, product_url: null });
   fill(db.machines, { category_id: null, responsible_id: null, is_set: false, product_url: null });
   fill(db.inventories, { location_id: null });
+  fill(db.photos, { kind: 'foto' });   // Gebäudeplan: bestehende Bilder sind Fotos
   if (!db.categories.length) seedCategories(db, at);
   return db;
 }
@@ -452,7 +482,7 @@ export function installOrgDemo(api, x) {
     for (const p of db.photos) {
       photoRoot.set(p.id, p.location_id);
       const e = at(p.location_id);
-      if (!e) continue;
+      if (!e || !isFoto(p)) continue;   // Foto-Kennzahlen nur kind = 'foto'
       e.photos += 1;
       if (p.status === 'analysiert') e.photos_analyzed += 1;
       else if (p.status === 'in_analyse') e.photos_queued += 1;
@@ -491,6 +521,7 @@ export function installOrgDemo(api, x) {
     const keyCount = new Map();
     for (const d of openDet) keyCount.set(d.obj_key, (keyCount.get(d.obj_key) || 0) + 1);
     const notRejected = db.detections.filter((d) => d.status !== 'abgelehnt');
+    const fotos = db.photos.filter(isFoto);   // Planbilder zählen nicht
     return {
       articles_total: db.articles.filter(live).length,
       machines_total: db.machines.filter(live).length,
@@ -502,10 +533,10 @@ export function installOrgDemo(api, x) {
       locations_total: db.locations.filter(live).length,
       spaces_total: db.locations.filter((l) => !l.parent_id && live(l)).length,
       spaces_organized: db.locations.filter((l) => !l.parent_id && live(l) && l.organized_at).length,
-      photos_total: db.photos.length,
-      photos_analyzed: db.photos.filter((p) => p.status === 'analysiert').length,
-      photos_pending: db.photos.filter((p) => p.status === 'neu' || p.status === 'in_analyse').length,
-      photos_failed: db.photos.filter((p) => p.status === 'fehler').length,
+      photos_total: fotos.length,
+      photos_analyzed: fotos.filter((p) => p.status === 'analysiert').length,
+      photos_pending: fotos.filter((p) => p.status === 'neu' || p.status === 'in_analyse').length,
+      photos_failed: fotos.filter((p) => p.status === 'fehler').length,
       detections_total: notRejected.length,
       detections_identified: notRejected.filter((d) => d.confidence === 'sicher' || d.confidence === 'wahrscheinlich').length,
       detections_unknown: notRejected.filter((d) => d.confidence === 'unbekannt').length,
@@ -842,6 +873,7 @@ export function installOrgDemo(api, x) {
     if (!p || !x.canRead()) throw E('not_found');
     if (!x.isStaff()) throw E('not_authorized');
     if (db.detections.some((d) => d.photo_id === p.id && d.status === 'bestaetigt')) throw E('in_use');   // Herkunftsnachweis
+    if (db.floor_plans.some((f) => f.photo_id === p.id)) throw E('in_use');   // Planbild eines Gebäudeplans (on delete restrict)
     const gone = new Set(db.detections.filter((d) => d.photo_id === p.id).map((d) => d.id));
     db.detections = db.detections.filter((d) => !gone.has(d.id));
     for (const d of db.detections) if (d.merged_into && gone.has(d.merged_into)) d.merged_into = null;
@@ -936,13 +968,16 @@ export function installOrgDemo(api, x) {
     if (has(p, 'label')) p.label = trimOrNull(p.label);
     if (has(p, 'location_id')) p.location_id = p.location_id || null;
     if (!obj.id) {
-      if (!isUuid(obj.photo_id) || !isUuid(p.location_id)) throw E('invalid_location');
+      if (!isUuid(obj.photo_id)) throw E('not_found');
+      if (p.location_id && !isUuid(p.location_id)) throw E('invalid_location');
+      // auf einem Gebäudeplan darf ein Bereich zunächst nur beschriftet sein (photo_hotspots_label_or_location_chk)
+      if (!p.location_id && !p.label) throw E('name_required');
       if (!x.isStaff()) throw E('not_authorized');
       if (!has(p, 'x') || !has(p, 'y')) throw E('invalid_value');
       if (!photoById(obj.photo_id)) throw E('not_found');
-      if (!locById(p.location_id)) throw E('invalid_location');
+      if (p.location_id && !locById(p.location_id)) throw E('invalid_location');
       const row = {
-        id: uuid(), photo_id: obj.photo_id, location_id: p.location_id, x: p.x, y: p.y, w: p.w ?? null, h: p.h ?? null,
+        id: uuid(), photo_id: obj.photo_id, location_id: p.location_id ?? null, x: p.x, y: p.y, w: p.w ?? null, h: p.h ?? null,
         label: p.label ?? null, created_by: x.uid(), created_at: now(),
       };
       db.photo_hotspots.push(row);
@@ -953,10 +988,58 @@ export function installOrgDemo(api, x) {
     const row = db.photo_hotspots.find((h) => h.id === obj.id) || null;
     if (!row || !x.canRead()) throw E('not_found');
     if (!x.isStaff()) throw E('not_authorized');
-    if (has(p, 'location_id') && !locById(p.location_id)) throw E('invalid_location');
+    const loc = has(p, 'location_id') ? p.location_id : row.location_id;
+    const label = has(p, 'label') ? p.label : row.label;
+    if (!loc && !label) throw E('invalid_value', 'photo_hotspots_label_or_location_chk');
+    if (has(p, 'location_id') && p.location_id && !locById(p.location_id)) throw E('invalid_location');
     const diff = x.applyPatch(row, p);
     if (Object.keys(diff).length) x.audit('update', 'photo_hotspots', row.id, diff);
     return row;
+  }
+
+  // ---- Gebäudepläne (floor_plans / floor_plan_overview) ----
+  function vFloorPlan(f) {
+    const p = photoById(f.photo_id) || {};
+    const hs = D().photo_hotspots.filter((h) => h.photo_id === f.photo_id);
+    return {
+      ...pick(f, FLOOR_PLAN_COLS), photo_path: p.path ?? null, photo_width: p.width ?? null, photo_height: p.height ?? null,
+      area_count: hs.length, linked_count: hs.filter((h) => h.location_id).length,
+    };
+  }
+  function coreSaveFloorPlan(obj) {
+    if (!obj || typeof obj !== 'object') throw E('invalid_value');
+    const db = D();
+    const patch = {};
+    if (hasKey(obj, 'name')) {
+      patch.name = String(obj.name ?? '').trim();
+      if (!patch.name || charLen(patch.name) > 80) throw E('name_required');   // floor_plans_name_check (1–80)
+    }
+    if (hasKey(obj, 'sort')) patch.sort = Math.round(Number(obj.sort) || 0);
+    if (hasKey(obj, 'notes')) patch.notes = trimOrNull(obj.notes);
+    if (!obj.id) {
+      if (!patch.name) throw E('name_required');
+      if (!isUuid(obj.photo_id)) throw E('file_required');
+      if (!x.isStaff()) throw E('not_authorized');
+      if (!photoById(obj.photo_id)) throw E('not_found');
+      if (db.floor_plans.some((f) => f.photo_id === obj.photo_id)) throw E('duplicate', 'floor_plans_photo_id_key');
+      const t = now();
+      const row = {
+        id: uuid(), name: patch.name, sort: patch.sort ?? 0, photo_id: obj.photo_id, notes: patch.notes ?? null,
+        created_by: x.uid(), created_at: t, updated_at: t,
+      };
+      db.floor_plans.push(row);
+      x.audit('insert', 'floor_plans', row.id, omit(row, ['created_at', 'updated_at']));
+      return row.id;
+    }
+    if (!isUuid(obj.id)) throw E('not_found');
+    const row = db.floor_plans.find((f) => f.id === obj.id) || null;
+    if (!row || !x.canRead()) throw E('not_found');
+    if (!Object.keys(patch).length) return row.id;
+    if (!x.isStaff()) throw E('not_authorized');
+    const diff = x.applyPatch(row, patch);   // photo_id ist nach dem Anlegen fest
+    row.updated_at = now();
+    if (Object.keys(diff).length) x.audit('update', 'floor_plans', row.id, diff);
+    return row.id;
   }
 
   // ---- Sets ----
@@ -1066,7 +1149,7 @@ export function installOrgDemo(api, x) {
     },
 
     // ---- Fotos ----
-    async listPhotos({ locationId, spaceId, status, ids } = {}) {
+    async listPhotos({ locationId, spaceId, status, ids, kind = 'foto' } = {}) {
       return x.read(() => {
         if (!x.canRead()) return [];
         const c = x.viewCtx();
@@ -1075,13 +1158,15 @@ export function installOrgDemo(api, x) {
         const idSet = Array.isArray(ids) ? new Set(ids) : null;
         return D().photos
           .map((p) => vPhoto(p, c, counts))
-          .filter((p) => (!locationId || p.location_id === locationId) && (!spaceId || p.root_id === spaceId)
+          .filter((p) => (!kind || p.kind === kind)   // Planbilder (kind 'plan') erscheinen nicht in Fotolisten
+            && (!locationId || p.location_id === locationId) && (!spaceId || p.root_id === spaceId)
             && st(p.status) && (!idSet || idSet.has(p.id)))
           .sort((a, b) => (ms(a.created_at) - ms(b.created_at)) || cmp(a.file_name, b.file_name) || cmp(a.id, b.id));
       });
     },
-    async importPhoto(file, { locationId, folder, sha256 } = {}) {
+    async importPhoto(file, { locationId, folder, sha256, kind = 'foto' } = {}) {
       x.load();
+      if (!PHOTO_KINDS.includes(kind)) throw E('invalid_input');
       if (!file || typeof file.size !== 'number') throw E('file_required');
       const origMime = String(file.type || '').toLowerCase() || guessImageMime(file.name);
       if (!IMAGE_MIME.includes(origMime)) throw E('file_type', origMime || '?');
@@ -1097,8 +1182,10 @@ export function installOrgDemo(api, x) {
       let mime = origMime;
       let width = null;
       let height = null;
-      const small = await resizeWithSize(file, x.limits.imageMaxPx, x.limits.imageQuality);
-      if (small) { blob = small.blob; mime = 'image/jpeg'; width = small.width; height = small.height; }
+      // Demo (localStorage ist klein): auch Pläne verkleinern, PNG-Pläne aber als PNG lassen (Strichzeichnung bleibt scharf)
+      const outType = kind === 'plan' && origMime === 'image/png' ? 'image/png' : 'image/jpeg';
+      const small = await resizeWithSize(file, x.limits.imageMaxPx, x.limits.imageQuality, outType);
+      if (small) { blob = small.blob; mime = small.mime; width = small.width; height = small.height; }
       if (blob.size > x.limits.maxFileBytes) throw E('file_too_large');
       const dataUrl = await x.blobToDataUrl(blob, mime);
       const ext = mime === 'image/jpeg' ? 'jpg' : (Object.keys(IMAGE_EXT).find((k) => IMAGE_EXT[k] === mime) || 'jpg');
@@ -1114,7 +1201,7 @@ export function installOrgDemo(api, x) {
           width, height,
           // photo_insert_defaults: Herkunft und Status setzt der Server
           status: 'neu', analysis_error: null, analysis_source: null, analyzed_at: null, scene: null, area: null,
-          observations: [], recommendations: [], uploaded_by: x.uid(), created_at: now(),
+          observations: [], recommendations: [], uploaded_by: x.uid(), created_at: now(), kind,
         };
         db.photos.push(row);
         db.files[row.path] = dataUrl;
@@ -1231,18 +1318,48 @@ export function installOrgDemo(api, x) {
     },
 
     // ---- Bereiche auf Fotos ----
-    async listHotspots({ photoId, photoIds } = {}) {
+    async listHotspots({ photoId, photoIds, locationId } = {}) {
       return x.read(() => {
         const ids = (Array.isArray(photoIds) ? photoIds : (photoId ? [photoId] : [])).filter(isUuid);
-        if (!ids.length || !x.canRead()) return [];
+        const loc = isUuid(locationId) ? locationId : null;   // alle Bereiche (auch auf Plänen), die auf diesen Lagerort zeigen
+        if ((!ids.length && !loc) || !x.canRead()) return [];
         const set = new Set(ids);
         return D().photo_hotspots
-          .filter((h) => set.has(h.photo_id))
+          .filter((h) => (!ids.length || set.has(h.photo_id)) && (!loc || h.location_id === loc))
           .sort((a, b) => ms(a.created_at) - ms(b.created_at))
           .map(vHotspot);
       });
     },
     async saveHotspot(obj) { return x.mutate(() => vHotspot(coreSaveHotspot(obj))); },
+
+    // ---- Gebäudepläne (Grundriss je Stockwerk; Bild = Foto mit kind 'plan', Räume = Bereiche) ----
+    async listFloorPlans() {
+      return x.read(() => {
+        if (!x.canRead()) return [];
+        return D().floor_plans
+          .slice()
+          .sort((a, b) => ((a.sort || 0) - (b.sort || 0)) || cmp(a.name, b.name) || cmp(a.id, b.id))
+          .map(vFloorPlan);
+      });
+    },
+    async saveFloorPlan(obj) {
+      return x.mutate(() => {
+        const id = coreSaveFloorPlan(obj);
+        return vFloorPlan(D().floor_plans.find((f) => f.id === id));
+      });
+    },
+    async deleteFloorPlan(id) {
+      return x.mutate(() => {
+        const db = D();
+        const f = isUuid(id) ? db.floor_plans.find((r) => r.id === id) : null;
+        if (!f || !x.canRead()) throw E('not_found');
+        if (!x.isAdmin()) throw E('not_authorized');
+        db.floor_plans = db.floor_plans.filter((r) => r.id !== f.id);
+        x.audit('delete', 'floor_plans', f.id, f);
+        // Planbild samt Bereichen entfernen (wie api-supabase.js: «best effort» – Prüfungen laufen vor jeder Änderung)
+        try { coreDeletePhoto(f.photo_id); } catch { /* Planbild bleibt */ }
+      });
+    },
     async deleteHotspot(id) {
       return x.mutate(() => {
         const db = D();

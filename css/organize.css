@@ -3,7 +3,8 @@
 
 .org .ic { flex: none; }
 /* Touch-Ziele mindestens 44 px, auch für kleine Knöpfe */
-.org .btn.sm, .org-steps .btn.sm, .org-recs .btn.sm, .org-det-card .btn.sm { min-height: 44px; }
+.org .btn.sm, .org-steps .btn.sm, .org-recs .btn.sm, .org-det-card .btn.sm, .org .page-head .btn { min-height: 44px; }
+.org .back-link { min-height: 44px; align-items: center; align-self: flex-start; }
 .org-ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .org-wrap { white-space: normal; }
 .org-code { font-weight: 700; color: var(--text); background: var(--surface-3); padding: 1px 7px; border-radius: 6px; }
@@ -357,6 +358,80 @@ a.stat:hover, button.stat.org-stat-btn:hover { background: var(--surface-2); }
 .org-codes-row:last-child { border-bottom: 0; }
 .org-codes-row label { display: flex; flex-direction: column; gap: 1px; min-width: 0; overflow-wrap: anywhere; }
 .org-codes-row input { text-transform: uppercase; }
+
+/* ---------- Bereichs-Editor: verschieben / Grösse ändern ---------- */
+.org-stage.editing .org-hs, .org-plan-stage.editing .org-hs { cursor: move; touch-action: none; }
+.org-hs.dragging { opacity: .85; }
+.org-hs-handle {
+  position: absolute; width: 16px; height: 16px; z-index: 3; background: #fff; border: 2px solid #b26a00; border-radius: 4px;
+  box-shadow: 0 1px 3px rgba(0,0,0,.4); touch-action: none;
+}
+.org-hs-handle::before { content: ''; position: absolute; inset: -12px; }   /* grössere Trefferfläche (≥ 40 px) */
+.org-hs-handle.nw { left: -9px; top: -9px; cursor: nwse-resize; }
+.org-hs-handle.ne { right: -9px; top: -9px; cursor: nesw-resize; }
+.org-hs-handle.sw { left: -9px; bottom: -9px; cursor: nesw-resize; }
+.org-hs-handle.se { right: -9px; bottom: -9px; cursor: nwse-resize; }
+
+/* ---------- Gebäudeplan ---------- */
+/* Der Plan ist eine Strichzeichnung auf Weiss: auch im Dunkel-Modus weiss lassen (nicht invertieren), heller Rahmen.
+   Auf dem Handy horizontal scrollbar; Pinch-Zoom des Browsers bleibt erlaubt (kein overflow hidden am Bild). */
+.org-plan-scroll {
+  overflow-x: auto; -webkit-overflow-scrolling: touch; background: #fff; border: 1px solid #d9d5ca; border-radius: var(--radius);
+}
+/* Breite: höchstens so breit, dass der ganze Plan etwa in die Fensterhöhe passt (Hochformat), mind. 640 px;
+   auf dem Handy breiter als der Bildschirm (horizontal scrollen), damit die Beschriftung lesbar bleibt. */
+.org-plan-stage {
+  --ar: 1.414; position: relative; margin: 0 auto; aspect-ratio: var(--ar); background: #fff; user-select: none; -webkit-user-select: none;
+  width: min(100%, max(640px, calc(88vh * var(--ar))));
+}
+@media (max-width: 899px) { .org-plan-stage { min-width: min(720px, calc(130vh * var(--ar))); } }
+.org-plan-stage.editing { min-width: 0; touch-action: none; cursor: crosshair; }
+.org-plan-stage.editing .org-layer { pointer-events: auto; }
+.org-plan-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; display: block; background: #fff; }
+.org-plan-img.thumb-empty { display: grid; place-items: center; color: #8a877f; }
+.org-fp.rect { box-shadow: none; }
+.org-fp.rect.linked { border: 2px solid var(--c); background: color-mix(in srgb, var(--c) 16%, transparent); }
+.org-fp.rect.linked:hover, .org-fp.rect.linked:focus-visible { background: color-mix(in srgb, var(--c) 30%, transparent); }
+.org-fp.rect.unlinked { border: 2px dashed #8a877f; background: rgba(138, 135, 127, .08); }
+.org-fp.rect.unlinked:hover { background: rgba(138, 135, 127, .18); }
+.org-fp .org-hs-label { background: var(--c, #5b5953); color: #fff; }
+.org-fp.unlinked .org-hs-label { background: #fff; color: #44423d; border: 1px dashed #8a877f; }
+.org-fp.pt.linked::before { background: var(--c); }
+.org-fp.pt.unlinked::before { background: #fff; border: 3px dashed #8a877f; }
+span.org-fp { cursor: default; }
+.org-plan-stage.editing .org-fp.rect { border-style: dashed; }
+.org-fp-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; color: var(--muted); }
+.org-fp-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.org-fp-sw { display: inline-block; width: 16px; height: 12px; border-radius: 3px; flex: none; }
+.org-fp-sw.linked { border: 2px solid var(--c); background: color-mix(in srgb, var(--c) 30%, transparent); }
+.org-fp-sw.unlinked { border: 2px dashed #8a877f; background: #fff; }
+.org-fp-rooms { list-style: none; margin: 0; padding: 0; }
+.org-fp-rooms .li-end .btn { min-height: 44px; white-space: normal; }
+.org-pre { white-space: pre-line; overflow-wrap: anywhere; margin: 0; }
+.org-fp-card .org-space-img.org-fp-thumb { object-fit: contain; background: #fff; }
+.org-fp-card .org-space-media { background: #fff; border-bottom: 1px solid var(--border); }
+.org-fp-card h3 .ic { width: 18px; height: 18px; vertical-align: -3px; }
+
+/* Vorschau «Auf dem Plan» im Kopf eines Raums */
+.org-head-top { flex-wrap: wrap; }
+.org-onplan {
+  order: 3; display: flex; flex-direction: column; gap: 4px; width: 100%; text-decoration: none; color: inherit; min-height: 44px;
+}
+.org-onplan .small { display: inline-flex; align-items: center; gap: 4px; }
+.org-onplan .ic { width: 16px; height: 16px; }
+.org-onplan-view {
+  --ar: 1.414; position: relative; display: block; width: min(100%, calc(170px * var(--ar))); aspect-ratio: var(--ar); overflow: hidden; border-radius: 10px;
+  background: #fff; border: 1px solid #d9d5ca;
+}
+.org-onplan-inner { position: absolute; display: block; }
+.org-onplan-inner .org-plan-img { position: absolute; inset: 0; }
+.org-onplan-mark { position: absolute; display: block; border: 3px solid #d23c2a; border-radius: 4px; background: rgba(210, 60, 42, .18); box-shadow: 0 0 0 2px #fff; }
+.org-onplan-mark.pt { width: 22px; height: 22px; border-radius: 50%; transform: translate(-50%, -50%); }
+.org-onplan:hover .org-onplan-view, .org-onplan:focus-visible .org-onplan-view { border-color: var(--accent); }
+@media (min-width: 700px) {
+  .org-head-top { flex-wrap: nowrap; }
+  .org-onplan { width: 240px; flex: none; }
+}
 
 @media (prefers-reduced-motion: reduce) {
   .org-progress > span, .org-dot::before, .org-howto summary::after { transition: none; }

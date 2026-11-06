@@ -250,6 +250,23 @@ locationDisplayCode(l), sha256Hex(blob)`.
 `organisieren/pruefen` (KI-Erkennung prüfen, Filter ?raum=<code>), `o/:code` (Raum/Lagerort visuell: Foto mit Bereichen, Unterorte,
 Inhalt, Fotos, Plan/Aufgaben, Verbessern), `suche?q=` (globale Suche), `kategorien` (Kategorien verwalten).
 
+### Gebäudeplan (Grundriss je Stockwerk)
+- `photos.kind` = `'foto'` (Standard) | `'plan'`. Planbilder zählen nicht in Foto-Kennzahlen und erscheinen nicht in Fotolisten.
+- `floor_plans` / `floor_plan_overview`: id, name («EG», «UG»), sort, photo_id (Planbild), notes, created_by, created_at, updated_at,
+  **photo_path, photo_width, photo_height, area_count, linked_count**. Lesen: alle; anlegen/ändern: Lagerverantwortliche; löschen: Admin.
+- Räume auf dem Plan = `photo_hotspots` auf dem Planbild. `location_id` darf leer sein (Raum nur beschriftet, noch nicht angelegt);
+  dann ist `label` Pflicht. Klick auf verknüpften Raum → `#/o/<code>`.
+```
+api.listFloorPlans()                          → floor_plan_overview (sort, name)
+api.saveFloorPlan({ id?, name, sort, notes, photo_id }) → Zeile (photo_id nur beim Anlegen)
+api.deleteFloorPlan(id)                       (Admin; entfernt auch Planbild und Bereiche)
+api.importPhoto(file, { kind: 'plan' })       → Planbild hochladen (wird nicht verkleinert; ohne locationId)
+api.listPhotos({ …, kind })                   Standard kind 'foto'
+api.listHotspots({ photoId | photoIds | locationId }) → mit locationId: alle Bereiche (auch auf Plänen), die auf diesen Lagerort zeigen
+api.saveHotspot({ …, location_id: null, label }) erlaubt (nur beschriftet)
+```
+Route: `organisieren/plan` (Stockwerk-Reiter, ?plan=<id>).
+
 ## Ansichten (js/views/*.js)
 
 Jede Datei:

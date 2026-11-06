@@ -465,6 +465,32 @@ create table if not exists public.photo_hotspots (
   created_at   timestamptz not null default now()
 );
 create index if not exists photo_hotspots_photo_idx on public.photo_hotspots (photo_id);
+create index if not exists photo_hotspots_location_idx on public.photo_hotspots (location_id);
+
+-- Gebäudepläne (Grundriss je Stockwerk): Das Bild liegt in photos (kind = 'plan'), die Räume sind Bereiche
+-- (photo_hotspots). Ein Bereich auf dem Plan darf zunächst nur beschriftet sein (Raum noch nicht angelegt).
+alter table public.photos add column if not exists kind text not null default 'foto';
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'photos_kind_chk') then
+    alter table public.photos add constraint photos_kind_chk check (kind in ('foto','plan'));
+  end if;
+  alter table public.photo_hotspots alter column location_id drop not null;
+  if not exists (select 1 from pg_constraint where conname = 'photo_hotspots_label_or_location_chk') then
+    alter table public.photo_hotspots add constraint photo_hotspots_label_or_location_chk
+      check (location_id is not null or length(trim(coalesce(label, ''))) > 0);
+  end if;
+end $$;
+create table if not exists public.floor_plans (
+  id          uuid primary key default gen_random_uuid(),
+  name        text not null check (length(trim(name)) between 1 and 80),
+  sort        int not null default 0,
+  photo_id    uuid not null unique references public.photos(id) on delete restrict,
+  notes       text,
+  created_by  uuid references public.profiles(id),
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
+);
 
 -- Organisationsplan: Aufgaben je Raum/Lagerort
 create table if not exists public.org_tasks (
@@ -771,6 +797,13 @@ drop trigger if exists set_components_created_by on public.set_components;
 create trigger set_components_created_by before insert on public.set_components for each row execute function public.set_created_by();
 drop trigger if exists set_components_audit on public.set_components;
 create trigger set_components_audit after insert or update or delete on public.set_components for each row execute function public.audit_row();
+
+drop trigger if exists floor_plans_created_by on public.floor_plans;
+create trigger floor_plans_created_by before insert on public.floor_plans for each row execute function public.set_created_by();
+drop trigger if exists floor_plans_updated on public.floor_plans;
+create trigger floor_plans_updated before update on public.floor_plans for each row execute function public.set_updated_at();
+drop trigger if exists floor_plans_audit on public.floor_plans;
+create trigger floor_plans_audit after insert or update or delete on public.floor_plans for each row execute function public.audit_row();
 
 -- =====================================================================
 --  Geschäftslogik (nur über diese Funktionen; sicher gegen gleichzeitige Zugriffe)
@@ -1544,7 +1577,8 @@ end $$;
 -- =====================================================================
 --  Ansichten (respektieren die Zugriffsregeln des angemeldeten Benutzers)
 -- =====================================================================
-drop view if exists public.org_stats, public.space_overview, public.org_task_overview, public.detection_overview,
+drop view if exists public.floor_plan_overview,
+                    public.org_stats, public.space_overview, public.org_task_overview, public.detection_overview,
                     public.photo_overview, public.category_paths,
                     public.movement_overview, public.loan_overview, public.article_overview,
                     public.machine_overview, public.location_overview, public.location_paths cascade;
@@ -1703,6 +1737,14 @@ select d.*,
   left join public.locations rl on rl.id = d.location_ref_id
   left join public.profiles rv on rv.id = d.reviewed_by;
 
+-- Gebäudepläne mit Bild und Anzahl Bereiche (verknüpft / nur beschriftet)
+create view public.floor_plan_overview with (security_invoker = true) as
+select f.*, p.path as photo_path, p.width as photo_width, p.height as photo_height,
+       (select count(*) from public.photo_hotspots h where h.photo_id = f.photo_id) as area_count,
+       (select count(*) from public.photo_hotspots h where h.photo_id = f.photo_id and h.location_id is not null) as linked_count
+  from public.floor_plans f
+  join public.photos p on p.id = f.photo_id;
+
 create view public.org_task_overview with (security_invoker = true) as
 select t.*, lp.path as location_path, lp.root_id,
        au.full_name as assigned_name, cu.full_name as created_by_name, du.full_name as done_by_name
@@ -1721,13 +1763,13 @@ with s as (
       where d.root_id = l.id and not a.archived) as articles,
     (select count(*) from public.machines m join public.location_paths d on d.id = m.home_location_id
       where d.root_id = l.id and not m.archived) as machines,
-    (select count(*) from public.photos p join public.location_paths d on d.id = p.location_id where d.root_id = l.id) as photos,
+    (select count(*) from public.photos p join public.location_paths d on d.id = p.location_id where d.root_id = l.id and p.kind = 'foto') as photos,
     (select count(*) from public.photos p join public.location_paths d on d.id = p.location_id
-      where d.root_id = l.id and p.status = 'analysiert') as photos_analyzed,
+      where d.root_id = l.id and p.kind = 'foto' and p.status = 'analysiert') as photos_analyzed,
     (select count(*) from public.photos p join public.location_paths d on d.id = p.location_id
-      where d.root_id = l.id and p.status = 'in_analyse') as photos_queued,
+      where d.root_id = l.id and p.kind = 'foto' and p.status = 'in_analyse') as photos_queued,
     (select count(*) from public.photos p join public.location_paths d on d.id = p.location_id
-      where d.root_id = l.id and p.status = 'fehler') as photos_failed,
+      where d.root_id = l.id and p.kind = 'foto' and p.status = 'fehler') as photos_failed,
     (select count(*) from public.detections x join public.photos p on p.id = x.photo_id
       join public.location_paths d on d.id = p.location_id
       where d.root_id = l.id and x.status in ('offen', 'spaeter')) as detections_open,
@@ -1772,10 +1814,10 @@ select
   (select count(*) from public.locations where not archived)                                    as locations_total,
   (select count(*) from public.locations where parent_id is null and not archived)              as spaces_total,
   (select count(*) from public.locations where parent_id is null and not archived and organized_at is not null) as spaces_organized,
-  (select count(*) from public.photos)                                                          as photos_total,
-  (select count(*) from public.photos where status = 'analysiert')                              as photos_analyzed,
-  (select count(*) from public.photos where status in ('neu', 'in_analyse'))                    as photos_pending,
-  (select count(*) from public.photos where status = 'fehler')                                  as photos_failed,
+  (select count(*) from public.photos where kind = 'foto')                                      as photos_total,
+  (select count(*) from public.photos where kind = 'foto' and status = 'analysiert')            as photos_analyzed,
+  (select count(*) from public.photos where kind = 'foto' and status in ('neu', 'in_analyse'))  as photos_pending,
+  (select count(*) from public.photos where kind = 'foto' and status = 'fehler')                as photos_failed,
   (select count(*) from public.detections where status <> 'abgelehnt')                          as detections_total,
   (select count(*) from public.detections where status <> 'abgelehnt' and confidence in ('sicher', 'wahrscheinlich')) as detections_identified,
   (select count(*) from public.detections where status <> 'abgelehnt' and confidence = 'unbekannt') as detections_unknown,
@@ -1908,7 +1950,7 @@ grant insert (location_id) on public.inventories to authenticated;
 grant insert (parent_id, name, sort, archived) on public.categories to authenticated;
 grant update (parent_id, name, sort, archived) on public.categories to authenticated;
 grant delete on public.categories to authenticated;
-grant insert (location_id, path, sha256, file_name, folder, mime, size_bytes, width, height) on public.photos to authenticated;
+grant insert (location_id, path, sha256, file_name, folder, mime, size_bytes, width, height, kind) on public.photos to authenticated;
 grant update (location_id) on public.photos to authenticated;
 grant delete on public.photos to authenticated;
 grant insert (photo_id, location_id, x, y, w, h, label) on public.photo_hotspots to authenticated;
@@ -1966,6 +2008,19 @@ drop policy if exists set_components_update on public.set_components;
 create policy set_components_update on public.set_components for update to authenticated using ((select public.is_staff())) with check ((select public.is_staff()));
 drop policy if exists set_components_delete on public.set_components;
 create policy set_components_delete on public.set_components for delete to authenticated using ((select public.is_staff()));
+
+alter table public.floor_plans enable row level security;
+grant insert (name, sort, photo_id, notes) on public.floor_plans to authenticated;
+grant update (name, sort, notes) on public.floor_plans to authenticated;
+grant delete on public.floor_plans to authenticated;
+drop policy if exists floor_plans_read on public.floor_plans;
+create policy floor_plans_read on public.floor_plans for select to authenticated using ((select public.is_active_user()));
+drop policy if exists floor_plans_insert on public.floor_plans;
+create policy floor_plans_insert on public.floor_plans for insert to authenticated with check ((select public.is_staff()));
+drop policy if exists floor_plans_update on public.floor_plans;
+create policy floor_plans_update on public.floor_plans for update to authenticated using ((select public.is_staff())) with check ((select public.is_staff()));
+drop policy if exists floor_plans_delete on public.floor_plans;
+create policy floor_plans_delete on public.floor_plans for delete to authenticated using ((select public.is_admin()));
 
 -- Funktionen: nur angemeldete Benutzer (nicht anonym) dürfen sie aufrufen
 do $$

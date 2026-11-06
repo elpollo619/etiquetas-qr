@@ -5,7 +5,7 @@
 import { installOrgDemo, upgradeDb, seedCategories, orgViewIndex, orgInUse, orgAfterDelete } from './api-demo-org.js';
 
 export const STORAGE_KEY = 'lgr-demo:v1';   // Schlüssel bleibt; der Datenstand trägt seine eigene Version
-const VERSION = 2;                          // 2 = «Lager organisieren» (Version 1 wird beim Laden übernommen)
+const VERSION = 3;                          // 2 = «Lager organisieren», 3 = Gebäudeplan (ältere Stände werden beim Laden übernommen)
 
 const DEMO_IMAGE_MAX_PX = 800;
 const DEMO_IMAGE_QUALITY = 0.8;
@@ -204,7 +204,7 @@ function emptyDb() {
     attachments: [], files: {},   // files: path → data:-URL
     inventories: [], inventory_counts: [], inventory_machine_checks: [], audit_log: [],
     // «Lager organisieren»
-    categories: [], photos: [], detections: [], photo_hotspots: [], org_tasks: [], set_components: [],
+    categories: [], photos: [], detections: [], photo_hotspots: [], org_tasks: [], set_components: [], floor_plans: [],
   };
 }
 
@@ -246,8 +246,13 @@ export function createApi({ LgrError = FallbackLgrError, storage, storageKey = S
       try {
         const parsed = JSON.parse(raw);
         if (parsed && Array.isArray(parsed.machines)) {
-          // Version 1 (vor «Lager organisieren») übernehmen: neue Tabellen/Spalten ergänzen, Startkategorien anlegen
-          if (parsed.version === 1) { upgradeDb(parsed, nowIso()); parsed.version = VERSION; upgraded = true; }
+          // ältere Stände (1: vor «Lager organisieren», 2: vor Gebäudeplan) übernehmen: fehlende Tabellen/Spalten
+          // ergänzen, Startkategorien anlegen falls keine – nur additiv, nichts geht verloren
+          if (Number.isInteger(parsed.version) && parsed.version >= 1 && parsed.version < VERSION) {
+            upgradeDb(parsed, nowIso());
+            parsed.version = VERSION;
+            upgraded = true;
+          }
           if (parsed.version === VERSION) db = parsed;
         }
       } catch { /* defekt → neu aufbauen */ }
@@ -392,13 +397,11 @@ export function createApi({ LgrError = FallbackLgrError, storage, storageKey = S
     const c = normCode(obj.code);
     if (c && c !== row.code) throw E('code_immutable');
   }
-  // Fremdschlüssel der neuen Spalten. Code wie die Fehlerzuordnung von api-supabase.js (nach Constraint-Name:
-  // «location…» → invalid_location, sonst not_found).
+  // Fremdschlüssel der neuen Spalten (Fehlerzuordnung wie api-supabase.js: responsible/cover_photo/category → not_found)
   function assertOrgRefs(table, p) {
-    const fk = table === 'locations' ? 'invalid_location' : 'not_found';
     if (p.category_id && !db.categories.some((c) => c.id === p.category_id)) throw E('not_found');
-    if (p.responsible_id && !profileOf(p.responsible_id)) throw E(fk);
-    if (p.cover_photo_id && !db.photos.some((ph) => ph.id === p.cover_photo_id)) throw E(fk);
+    if (p.responsible_id && !profileOf(p.responsible_id)) throw E('not_found');
+    if (p.cover_photo_id && !db.photos.some((ph) => ph.id === p.cover_photo_id)) throw E('not_found');
   }
   // Kurzcode eindeutig je Ebene (locations_short_code_uniq: coalesce(parent_id, 0) + short_code)
   function assertShortCodeFree(id, parentId, shortCode) {
