@@ -124,6 +124,132 @@ api.listAudit({ limit, entity, entityId }) → audit_log, neueste zuerst
 `requestId` = `uuid()` beim Öffnen des Bestätigungsdialogs erzeugen und bei Wiederholung derselben Aktion wiederverwenden
 (verhindert Doppelbuchungen bei Doppeltipp oder Verbindungsproblemen).
 
+
+## Erweiterung «Lager organisieren» (November 2026)
+
+Ziel: alle Gegenstände der Firma strukturiert (Kategorien + Lagerort-Hierarchie), visuell (Fotos mit Bereichen) und
+geprüft (KI-Vorschläge → Mensch bestätigt) erfassen. **Keine erfundenen Zahlen**: alle Kennzahlen kommen aus den Ansichten.
+
+### Datenmodell (neu/erweitert)
+
+- `categories` / `category_paths`: id, parent_id, name, sort, archived, **path** («IT & Elektronik › Kabel & Adapter»), depth, root_id
+- `locations` neu: `short_code` (A–Z/0–9, max. 10, eindeutig je Ebene), `responsible_id`, `cover_photo_id` (Übersichtsfoto aus `photos`),
+  `organized_at`, `organized_by`; weitere Typen: `bereich, schrank, tablar, schublade, werkzeugwand, halterung, arbeitsplatz, container`.
+  `location_overview` zusätzlich: **code_path** («HL-RG01-FA02», nur wenn jede Ebene einen Kurzcode hat), **root_id** (Raum),
+  **cover_photo_path**, **responsible_name**, **organized_by_name**; `photo_path` = Übersichtsfoto, sonst Hauptfoto der Anhänge.
+  **Raum** = oberster Lagerort (parent_id null). Der interne Code (L-0001, im QR) ändert sich nie – Kurzcodes dürfen sich ändern.
+- `machines` neu: `category_id`, `responsible_id` (zugeteilte Person, z. B. Laptop), `is_set`, `product_url` (Herstellerseite, nur Link).
+  `machine_overview` zusätzlich: **category_path, responsible_name, location_code_path, component_count**; `photo_path` fällt auf das
+  Originalfoto der bestätigten Erkennung zurück.
+- `articles` neu: `category_id`, `product_url`. `article_overview` zusätzlich: **category_path, location_code_path**; photo_path wie oben.
+- `set_components`: id, set_id (Maschine mit is_set), machine_id | article_id | name (freie Komponente), qty, note, sort
+- `photos` / `photo_overview`: id, location_id, path (Storage `photos/<sha256>.jpg`), sha256 (Originaldatei), file_name, folder,
+  mime, size_bytes, width, height, status (`neu`,`in_analyse`,`analysiert`,`fehler`), analysis_error, analysis_source, analyzed_at,
+  scene, area, observations (jsonb Text-Array), recommendations (jsonb Text-Array), uploaded_by, created_at,
+  **location_path, root_id, uploaded_by_name, detection_count, open_count**
+- `detections` / `detection_overview` (erkannte Objekte = Vorschläge): id, photo_id, obj_key (gleiches physisches Objekt auf mehreren
+  Fotos = gleicher Schlüssel), source (`ki`|`manuell`), name, kind (`einzelinventar`,`bestandsartikel`,`set`,`einrichtung`,`unbekannt`),
+  category_id, category_text, brand, model, serial_no, text_read (gelesene Beschriftungen), quantity, quantity_certain, unit, condition,
+  confidence (`sicher`,`wahrscheinlich`,`unbekannt`), pos_x/pos_y (0–1, ungefähre Position im Foto), part_of_key (gehört zu Set),
+  notes, product (jsonb: `{ url, source, manual_url, specs, image_note }`), status (`offen`,`spaeter`,`bestaetigt`,`zusammengefuehrt`,`abgelehnt`),
+  article_id, machine_id, location_ref_id (erzeugtes Inventar), target_location_id (gewählter Lagerort), merged_into, reviewed_by/at,
+  **photo_path, photo_file_name, photo_location_id, photo_width, photo_height, space_id, photo_location_path, target_location_path,
+  category_path, article_code, article_name, machine_code, machine_name, location_ref_code, location_ref_name, reviewed_by_name,
+  same_key_count** (wie oft dasselbe Objekt auf anderen Fotos im selben Raum vorkommt)
+- `photo_hotspots`: id, photo_id, location_id, x, y, w, h (0–1; ohne w/h = Punkt), label — Bereich auf einem Foto → Lagerort
+- `org_tasks` / `org_task_overview`: id, location_id, photo_id, title, details, source (`manuell`,`foto_analyse`,`regel`),
+  status (`offen`,`erledigt`,`verworfen`), assigned_to, sort, created_by, created_at, done_by, done_at,
+  **location_path, root_id, assigned_name, created_by_name, done_by_name**
+- `space_overview` (eine Zeile je Raum): alle Spalten von location_overview + sublocations, articles, machines, photos, photos_analyzed,
+  photos_queued, photos_failed, detections_open, detections_done, tasks_open, tasks_done, **org_status**
+  (`nicht_erfasst`,`fotos_vorhanden`,`in_analyse`,`zu_pruefen`,`in_organisation`,`organisiert`), **progress** (0–100 =
+  (bestätigte Objekte + erledigte Aufgaben) / (dieselben + offene); nie geschätzt)
+- `org_stats` (eine Zeile): articles_total, machines_total, sets_total, loans_open, loans_overdue, items_without_location,
+  locations_total, spaces_total, spaces_organized, photos_total, photos_analyzed, photos_pending, photos_failed, detections_total,
+  detections_identified, detections_unknown, detections_confirmed, detections_open, locations_proposed, duplicate_groups, tasks_open, movements_7d
+- `inventories` neu: `location_id` (Inventur nur für einen Raum/Lagerort)
+
+### Rechte (neu)
+Lesen: alle freigegebenen Mitarbeiter. Fotos importieren, KI-Ergebnis importieren, prüfen, Aufgaben, Bereiche, Kategorien, Sets
+bearbeiten: Lagerverantwortliche + Admins. Kategorien löschen: nur Admins (und nur unbenutzt). Erkennungen ändern nur über Funktionen.
+Fotos mit bestätigten Objekten lassen sich nicht löschen (`in_use`).
+
+### KI – was wirklich passiert (ehrlich anzeigen!)
+Die App hat **keinen eigenen KI-Dienst** (kein API-Schlüssel hinterlegt). Die Bilderkennung erstellt Claude (Anthropic) in einer
+Claude-Code-Sitzung aus den Originalfotos; das Ergebnis ist eine JSON-Datei (`schema: "lgr-photo-analysis/1"`), die in der App
+importiert wird (Zuordnung über SHA-256 der Originaldatei). Jede Erkennung bleibt ein **Vorschlag**, bis jemand sie bestätigt.
+«Mit KI organisieren» = diesen Ablauf führen (Fotos → vormerken → Ergebnis importieren → prüfen → Plan → Etiketten → abschliessen) und
+aus den echten Daten einen Organisationsvorschlag (Aufgaben, Quelle `regel`) erzeugen. «Was soll ich hier verbessern?» = Empfehlungen
+aus der Fotoanalyse (pro Foto, mit Befund als Begründung) + Prüfungen der Daten (Quelle «Aus den Daten abgeleitet»). Nichts simulieren.
+
+Format der Import-Datei (Objekt mit `photos` oder direkt ein Array):
+```
+{ "schema": "lgr-photo-analysis/1", "source": "Claude (Anthropic) – Sitzung 06.11.2026",
+  "photos": [ { "file": "…jpeg", "sha256": "<64 hex>", "status": "analysiert"|"fehler"|"duplikat", "error": null,
+                "scene": "…", "area": "…", "observations": ["…"], "recommendations": ["…"],
+                "objects": [ { "key": "bosch-gbh-2-28", "name": "…", "kind": "einzelinventar", "category": "Maschinen & Geräte > Sägen",
+                               "brand": "…", "model": "…", "serial": null, "text_read": ["…"], "quantity": 1, "quantity_certain": true,
+                               "unit": "Stk", "condition": "gebraucht", "confidence": "sicher", "pos": [0.5, 0.4], "part_of": null,
+                               "notes": "…", "product": { "url": "https://…", "source": "Hersteller", "image_note": "…" } } ] } ] }
+```
+
+### API (neu)
+```
+api.listCategories({ includeArchived })        → category_paths, in Baumreihenfolge (sort, Name)
+api.saveCategory({ id?, parent_id, name, sort, archived }) → Zeile
+api.deleteCategory(id)                          (nur Admin; in_use wenn benutzt)
+
+api.listSpaces()                               → space_overview, sortiert nach Name (nur nicht archivierte)
+api.orgStats()                                 → org_stats-Zeile
+api.setLocationOrganized(locationId, done)     → location   (Fehler open_items, detail «offeneObjekte/offeneAufgaben»)
+
+api.listPhotos({ locationId, spaceId, status, ids }) → photo_overview (nach created_at, file_name)
+api.importPhoto(file, { locationId, folder, sha256 }) → { photo, duplicate }   duplicate=true: SHA-256 schon vorhanden
+                                               (dann photo = bestehendes Foto). Bild wird auf max. 1600 px verkleinert;
+                                               sha256 immer von der ORIGINALdatei.
+api.setPhotoStatus(ids, status)                → Anzahl ('in_analyse' vormerken | 'neu' zurücksetzen)
+api.movePhoto(id, locationId)                  → photo
+api.deletePhoto(photo)
+api.importAnalysis(items, source)              → { matched, created, existing, failed, duplicates, invalid, unmatched[] }
+                                               (max. 250 Einträge je Aufruf; Aufrufer teilt in Pakete)
+
+api.listDetections({ spaceId, photoId, status (Text oder Array), articleId, machineId }) → detection_overview
+api.reviewDetection(id, action, data)          → { detection, entity, entity_id, codes[], merged }
+     action: 'bearbeiten' (data: name, kind, category_id, brand, model, serial_no, quantity, unit, target_location_id, notes)
+             'lagerort' (data: target_location_id) · 'spaeter' · 'ablehnen' (data: reason) · 'wiederoeffnen'
+             'zusammenfuehren' (data: into = andere detection id)
+             'bestaetigen' (data optional wie bearbeiten + mode 'neu'|'verknuepfen', article_id|machine_id|location_id,
+                            without_stock (Bestandsartikel ohne sichere Menge → Bestand 0), loc_type, short_code (für einrichtung))
+     Fehler: quantity_uncertain, kind_required, already_reviewed, name_required, invalid_qty, invalid_location
+api.addDetection(photoId, { name, kind, notes, pos_x, pos_y, target_location_id }) → detection (source 'manuell', confidence 'unbekannt')
+
+api.listTasks({ locationId, spaceId, status }) → org_task_overview (offene zuerst, dann sort, created_at)
+api.saveTask(obj)                              → Zeile (neu: location_id, title, details, source, photo_id, assigned_to, sort;
+                                                 ändern: title, details, status, assigned_to, sort)
+
+api.listHotspots({ photoId, photoIds })        → photo_hotspots (+ location_code, location_name, location_type)
+api.saveHotspot(obj)                           → Zeile (neu: photo_id, location_id, x, y, w, h, label; ändern: location_id, x, y, w, h, label)
+api.deleteHotspot(id)
+
+api.listComponents(setId)                      → set_components (+ machine_code, machine_name, article_code, article_name, unit), nach sort
+api.saveComponent(obj) / api.deleteComponent(id)
+
+Bestehend, erweitert: saveLocation(short_code, responsible_id, cover_photo_id), saveMachine(category_id, responsible_id, is_set,
+product_url), saveArticle(category_id, product_url), createInventory({ name, note, location_id }).
+```
+Neue Fehlercodes: `category_cycle, quantity_uncertain, kind_required, already_reviewed, open_items, invalid_input, too_many, invalid_file`.
+
+### Gemeinsames Modul js/org-common.js (vom Lead)
+`ORG_STATUSES, CONFIDENCES, DETECTION_STATUSES, KINDS, LOCATION_TYPES, SPACE_PRESETS, SHORT_PREFIX, suggestShortCode(type, siblings),
+normShortCode, orgStatusLabel/orgStatusPill, confidenceLabel/confidencePill, detectionStatusLabel, kindLabel, photoStatusLabel,
+taskStatusLabel, sourceLabel, categoryOptionsHtml(categories, selectedId), categoryPathOf, categorySubtreeIds, locationSubtreeIds,
+locationDisplayCode(l), sha256Hex(blob)`.
+
+### Neue Routen
+`organisieren` (Übersicht Räume + Kennzahlen), `organisieren/import` (Fotos importieren / KI-Ergebnis importieren, ?ort=<code>, ?teil=analyse springt zum KI-Import),
+`organisieren/pruefen` (KI-Erkennung prüfen, Filter ?raum=<code>), `o/:code` (Raum/Lagerort visuell: Foto mit Bereichen, Unterorte,
+Inhalt, Fotos, Plan/Aufgaben, Verbessern), `suche?q=` (globale Suche), `kategorien` (Kategorien verwalten).
+
 ## Ansichten (js/views/*.js)
 
 Jede Datei:

@@ -2,8 +2,10 @@
 import { t, registerStrings, locale, fmtDate, fmtDateTime, fmtNum, fmtQty, unitLabel } from '../i18n.js';
 import {
   esc, clean, can, icon, emptyHtml, errorText, toast, sheet, statusPill, parseScanned,
-  downloadCsv, numOrNull, debounce, thumbHtml, hydrateThumbs,
+  downloadCsv, downloadBlob, numOrNull, debounce, thumbHtml, hydrateThumbs,
 } from '../util.js';
+import { locationSubtreeIds, sha256Hex } from '../org-common.js';
+import { xlsxBlob } from '../xlsx.js';
 
 registerStrings({
   de: {
@@ -33,8 +35,8 @@ registerStrings({
     'inventory.scanTitle': 'Inventur scannen',
     'inventory.scanHint': 'Artikel scannen und danach die gezählte Menge eingeben. Maschinen werden direkt als «vorhanden» erfasst.',
     'inventory.export': 'Export',
-    'inventory.exportArticles': 'Artikel (Excel)',
-    'inventory.exportMachines': 'Maschinen (Excel)',
+    'inventory.exportArticles': 'Artikel (CSV)',
+    'inventory.exportMachines': 'Maschinen (CSV)',
     'inventory.exportPdf': 'PDF / Drucken',
     'inventory.close': 'Abschliessen',
     'inventory.closeTitle': 'Inventur abschliessen',
@@ -100,6 +102,42 @@ registerStrings({
     'inventory.signCount': 'Visum Zählung',
     'inventory.signApprove': 'Visum Lagerverantwortlicher',
     'inventory.overdue': 'überfällig',
+    'inventory.defaultNameLoc': 'Inventur {month} – {place}',
+    'inventory.location': 'Raum / Lagerort',
+    'inventory.locationAll': '– ganzes Lager (alle Lagerorte) –',
+    'inventory.locationHint': 'Optional: nur die Artikel und Maschinen dieses Lagerorts und aller seiner Unterorte zählen.',
+    'inventory.scope': 'Lagerort: {path}',
+    'inventory.scopeAll': 'Ganzes Lager',
+    'inventory.scopeHint': 'Diese Inventur umfasst nur Artikel und Maschinen in «{path}» und seinen Unterorten.',
+    'inventory.scanOutside': '{code} gehört nicht zu dieser Inventur (anderer Lagerort).',
+    'inventory.unknown': 'Unbekanntes Objekt erfassen',
+    'inventory.unknownIntro': 'Für Gegenstände ohne Etikett, die in keiner Liste stehen: Foto machen und kurz beschreiben. Bestätigt oder zugeordnet wird es danach unter «KI-Erkennung prüfen».',
+    'inventory.unknownPhoto': 'Foto',
+    'inventory.choosePhoto': 'Foto wählen',
+    'inventory.photoPreview': 'Gewähltes Foto',
+    'inventory.unknownName': 'Was ist es?',
+    'inventory.unknownNamePh': 'z. B. graue Kiste mit Kabeln',
+    'inventory.unknownWhere': 'Wo gefunden?',
+    'inventory.unknownNotes': 'Notiz',
+    'inventory.unknownNotesPh': 'z. B. lag unten links im Regal, ohne Etikett',
+    'inventory.unknownNeedPhoto': 'Bitte zuerst ein Foto aufnehmen oder wählen.',
+    'inventory.unknownNeedLocation': 'Bitte den Lagerort wählen, an dem du es gefunden hast.',
+    'inventory.unknownChoose': '– bitte wählen –',
+    'inventory.unknownSave': 'Erfassen',
+    'inventory.unknownSaving': 'Foto wird hochgeladen…',
+    'inventory.unknownTitle': 'Objekt erfasst',
+    'inventory.unknownDone': 'Erfasst. Das Objekt erscheint jetzt unter «KI-Erkennung prüfen» und wird dort bestätigt oder zugeordnet.',
+    'inventory.unknownDup': 'Dieses Foto war schon importiert – das Objekt wurde dem vorhandenen Foto hinzugefügt.',
+    'inventory.toReview': 'Zu «KI-Erkennung prüfen»',
+    'inventory.continue': 'Weiter zählen',
+    'inventory.exportXlsx': 'Excel (.xlsx) – Artikel und Maschinen',
+    'inventory.colCategory': 'Kategorie',
+    'inventory.colTime': 'Zeitpunkt',
+    'inventory.colNote': 'Notiz',
+    'inventory.sheetInfo': 'Info',
+    'inventory.date': 'Datum',
+    'inventory.signPlace': 'Ort, Datum',
+    'inventory.diffTitle': 'Differenz Soll/Ist',
   },
   pt: {
     'inventory.title': 'Inventário',
@@ -128,8 +166,8 @@ registerStrings({
     'inventory.scanTitle': 'Ler para o inventário',
     'inventory.scanHint': 'Lê um artigo e introduz depois a quantidade contada. As máquinas ficam logo registadas como «presente».',
     'inventory.export': 'Exportar',
-    'inventory.exportArticles': 'Artigos (Excel)',
-    'inventory.exportMachines': 'Máquinas (Excel)',
+    'inventory.exportArticles': 'Artigos (CSV)',
+    'inventory.exportMachines': 'Máquinas (CSV)',
     'inventory.exportPdf': 'PDF / Imprimir',
     'inventory.close': 'Fechar',
     'inventory.closeTitle': 'Fechar inventário',
@@ -195,6 +233,42 @@ registerStrings({
     'inventory.signCount': 'Visto da contagem',
     'inventory.signApprove': 'Visto do responsável de armazém',
     'inventory.overdue': 'em atraso',
+    'inventory.defaultNameLoc': 'Inventário {month} – {place}',
+    'inventory.location': 'Divisão / localização',
+    'inventory.locationAll': '– armazém inteiro (todas as localizações) –',
+    'inventory.locationHint': 'Opcional: contar só os artigos e máquinas desta localização e de todas as suas sublocalizações.',
+    'inventory.scope': 'Localização: {path}',
+    'inventory.scopeAll': 'Armazém inteiro',
+    'inventory.scopeHint': 'Este inventário abrange só artigos e máquinas em «{path}» e nas suas sublocalizações.',
+    'inventory.scanOutside': '{code} não pertence a este inventário (outra localização).',
+    'inventory.unknown': 'Registar objeto desconhecido',
+    'inventory.unknownIntro': 'Para objetos sem etiqueta que não estão em nenhuma lista: tira uma foto e descreve-o brevemente. Depois é confirmado ou atribuído em «Verificar reconhecimento por IA».',
+    'inventory.unknownPhoto': 'Foto',
+    'inventory.choosePhoto': 'Escolher foto',
+    'inventory.photoPreview': 'Foto escolhida',
+    'inventory.unknownName': 'O que é?',
+    'inventory.unknownNamePh': 'ex.: caixa cinzenta com cabos',
+    'inventory.unknownWhere': 'Onde foi encontrado?',
+    'inventory.unknownNotes': 'Nota',
+    'inventory.unknownNotesPh': 'ex.: estava em baixo à esquerda na estante, sem etiqueta',
+    'inventory.unknownNeedPhoto': 'Tira ou escolhe primeiro uma foto.',
+    'inventory.unknownNeedLocation': 'Escolhe a localização onde o encontraste.',
+    'inventory.unknownChoose': '– escolher –',
+    'inventory.unknownSave': 'Registar',
+    'inventory.unknownSaving': 'A carregar a foto…',
+    'inventory.unknownTitle': 'Objeto registado',
+    'inventory.unknownDone': 'Registado. O objeto aparece agora em «Verificar reconhecimento por IA», onde é confirmado ou atribuído.',
+    'inventory.unknownDup': 'Esta foto já tinha sido importada – o objeto foi adicionado à foto existente.',
+    'inventory.toReview': 'Ir para «Verificar reconhecimento por IA»',
+    'inventory.continue': 'Continuar a contar',
+    'inventory.exportXlsx': 'Excel (.xlsx) – artigos e máquinas',
+    'inventory.colCategory': 'Categoria',
+    'inventory.colTime': 'Data/hora',
+    'inventory.colNote': 'Nota',
+    'inventory.sheetInfo': 'Info',
+    'inventory.date': 'Data',
+    'inventory.signPlace': 'Local, data',
+    'inventory.diffTitle': 'Diferença previsto/contado',
   },
   es: {
     'inventory.title': 'Inventario',
@@ -223,8 +297,8 @@ registerStrings({
     'inventory.scanTitle': 'Escanear para el inventario',
     'inventory.scanHint': 'Escanea un artículo e introduce después la cantidad contada. Las máquinas se registran directamente como «presente».',
     'inventory.export': 'Exportar',
-    'inventory.exportArticles': 'Artículos (Excel)',
-    'inventory.exportMachines': 'Máquinas (Excel)',
+    'inventory.exportArticles': 'Artículos (CSV)',
+    'inventory.exportMachines': 'Máquinas (CSV)',
     'inventory.exportPdf': 'PDF / Imprimir',
     'inventory.close': 'Cerrar',
     'inventory.closeTitle': 'Cerrar inventario',
@@ -290,6 +364,42 @@ registerStrings({
     'inventory.signCount': 'Visto bueno del recuento',
     'inventory.signApprove': 'Visto bueno del responsable de almacén',
     'inventory.overdue': 'con retraso',
+    'inventory.defaultNameLoc': 'Inventario {month} – {place}',
+    'inventory.location': 'Sala / ubicación',
+    'inventory.locationAll': '– todo el almacén (todas las ubicaciones) –',
+    'inventory.locationHint': 'Opcional: contar solo los artículos y máquinas de esta ubicación y de todas sus sububicaciones.',
+    'inventory.scope': 'Ubicación: {path}',
+    'inventory.scopeAll': 'Todo el almacén',
+    'inventory.scopeHint': 'Este inventario abarca solo artículos y máquinas en «{path}» y sus sububicaciones.',
+    'inventory.scanOutside': '{code} no pertenece a este inventario (otra ubicación).',
+    'inventory.unknown': 'Registrar objeto desconocido',
+    'inventory.unknownIntro': 'Para objetos sin etiqueta que no están en ninguna lista: haz una foto y descríbelo brevemente. Después se confirma o se asigna en «Revisar reconocimiento por IA».',
+    'inventory.unknownPhoto': 'Foto',
+    'inventory.choosePhoto': 'Elegir foto',
+    'inventory.photoPreview': 'Foto elegida',
+    'inventory.unknownName': '¿Qué es?',
+    'inventory.unknownNamePh': 'p. ej. caja gris con cables',
+    'inventory.unknownWhere': '¿Dónde se encontró?',
+    'inventory.unknownNotes': 'Nota',
+    'inventory.unknownNotesPh': 'p. ej. estaba abajo a la izquierda en la estantería, sin etiqueta',
+    'inventory.unknownNeedPhoto': 'Primero haz o elige una foto.',
+    'inventory.unknownNeedLocation': 'Elige la ubicación donde lo encontraste.',
+    'inventory.unknownChoose': '– elegir –',
+    'inventory.unknownSave': 'Registrar',
+    'inventory.unknownSaving': 'Subiendo la foto…',
+    'inventory.unknownTitle': 'Objeto registrado',
+    'inventory.unknownDone': 'Registrado. El objeto aparece ahora en «Revisar reconocimiento por IA», donde se confirma o se asigna.',
+    'inventory.unknownDup': 'Esta foto ya se había importado: el objeto se ha añadido a la foto existente.',
+    'inventory.toReview': 'Ir a «Revisar reconocimiento por IA»',
+    'inventory.continue': 'Seguir contando',
+    'inventory.exportXlsx': 'Excel (.xlsx) – artículos y máquinas',
+    'inventory.colCategory': 'Categoría',
+    'inventory.colTime': 'Fecha/hora',
+    'inventory.colNote': 'Nota',
+    'inventory.sheetInfo': 'Info',
+    'inventory.date': 'Fecha',
+    'inventory.signPlace': 'Lugar, fecha',
+    'inventory.diffTitle': 'Diferencia previsto/contado',
   },
 });
 
@@ -331,15 +441,31 @@ function printArea() {
   return pa;
 }
 
+// Lagerort-Anzeige: Pfad (+ lesbarer Code)
+const locLabel = (l) => (l ? `${l.path || l.name}${l.code_path ? ` (${l.code_path})` : ''}` : '');
+const byPath = (a, b) => String(a.path || a.name).localeCompare(String(b.path || b.name), locale(), { numeric: true });
+
 // ---------- Neue Inventur ----------
-async function newInventorySheet(ctx) {
+async function newInventorySheet(ctx, { locations = [], presetId = '' } = {}) {
   const month = new Intl.DateTimeFormat(locale(), { month: 'long', year: 'numeric' }).format(new Date());
-  const def = t('inventory.defaultName', { month });
+  const locs = (locations || []).filter((l) => !l.archived).sort(byPath);
+  const defName = (id) => {
+    const l = id ? locs.find((x) => x.id === id) : null;
+    return l ? t('inventory.defaultNameLoc', { month, place: l.name }) : t('inventory.defaultName', { month });
+  };
+  const preset = presetId && locs.some((l) => l.id === presetId) ? presetId : '';
+  let nameEdited = false;
   const res = await sheet({
     title: t('inventory.new'),
     body: `<form class="stack" novalidate>
+      ${locs.length ? `<div class="field"><label for="inv-loc">${esc(t('inventory.location'))} <span class="muted">(${esc(t('common.optional'))})</span></label>
+        <select id="inv-loc" name="location_id" aria-describedby="inv-loc-h">
+          <option value="">${esc(t('inventory.locationAll'))}</option>
+          ${locs.map((l) => `<option value="${esc(l.id)}"${l.id === preset ? ' selected' : ''}>${esc(locLabel(l))}</option>`).join('')}
+        </select>
+        <p class="hint" id="inv-loc-h" style="margin:0">${esc(t('inventory.locationHint'))}</p></div>` : ''}
       <div class="field"><label for="inv-name">${esc(t('inventory.name'))}</label>
-        <input id="inv-name" name="name" type="text" required maxlength="120" value="${esc(def)}" autocomplete="off"></div>
+        <input id="inv-name" name="name" type="text" required maxlength="120" value="${esc(defName(preset))}" autocomplete="off"></div>
       <div class="field"><label for="inv-note">${esc(t('inventory.note'))} <span class="muted">(${esc(t('common.optional'))})</span></label>
         <textarea id="inv-note" name="note" rows="2"></textarea></div>
       <p class="hint">${esc(t('inventory.newHint'))}</p>
@@ -352,7 +478,9 @@ async function newInventorySheet(ctx) {
           const name = clean(sh.querySelector('#inv-name').value);
           if (!name) throw Object.assign(new Error('name_required'), { code: 'name_required' });
           const note = clean(sh.querySelector('#inv-note').value) || null;
-          const inv = await ctx.api.createInventory({ name, note });
+          const sel = sh.querySelector('#inv-loc');
+          const locationId = sel && sel.value ? sel.value : null;
+          const inv = await ctx.api.createInventory(locationId ? { name, note, location_id: locationId } : { name, note });
           return inv || null;
         },
       },
@@ -362,6 +490,10 @@ async function newInventorySheet(ctx) {
         e.preventDefault();
         sh.querySelector('.sheet-actions .primary').click();
       });
+      const nameInp = sh.querySelector('#inv-name');
+      nameInp.addEventListener('input', () => { nameEdited = true; });
+      const sel = sh.querySelector('#inv-loc');
+      if (sel) sel.addEventListener('change', () => { if (!nameEdited) nameInp.value = defName(sel.value); });
     },
   });
   if (res && res.id) {
@@ -380,17 +512,25 @@ async function listRoute(ctx) {
     <p class="muted" style="margin:0">${esc(t('inventory.intro'))}</p>`;
   el.innerHTML = `<div class="page">${head}<p class="muted" role="status">${esc(t('common.loading'))}</p></div>`;
 
-  let inventories, profiles, articles;
+  let inventories, profiles, articles, locations;
   try {
-    [inventories, profiles, articles] = await Promise.all([
+    [inventories, profiles, articles, locations] = await Promise.all([
       api.listInventories(),
       api.listProfiles().catch(() => []),
       api.listArticles().catch(() => []),
+      api.listLocations({ includeArchived: true }).catch(() => []),
     ]);
   } catch (err) { errorPage(ctx, err); return; }
   inventories = inventories || [];
+  locations = Array.isArray(locations) ? locations : [];
   const names = new Map((profiles || []).map((p) => [p.id, p.full_name]));
-  const totalArticles = (articles || []).length;
+  const locById = new Map(locations.map((l) => [l.id, l]));
+  // Anzahl Artikel im Umfang (ganzes Lager oder Lagerort inkl. Unterorte)
+  const totalFor = (inv) => {
+    if (!inv.location_id) return (articles || []).length;
+    const ids = locationSubtreeIds(locations, inv.location_id);
+    return (articles || []).filter((a) => a.location_id && ids.has(a.location_id)).length;
+  };
 
   // Zähler (gezählte Artikel / geprüfte Maschinen) für die neuesten Inventuren
   const details = await Promise.allSettled(inventories.slice(0, 15).map((i) => api.getInventory(i.id)));
@@ -407,14 +547,17 @@ async function listRoute(ctx) {
     const sub1 = [t('inventory.startedAt', { d: fmtDate(inv.started_at) }) + (who ? ' ' + t('inventory.startedBy', { name: who }) : '')];
     if (inv.closed_at) sub1.push(t('inventory.closedAt', { d: fmtDate(inv.closed_at) }));
     let sub2 = '';
+    const total = totalFor(inv);
     if (st) {
-      sub2 = (inv.status === 'offen' && totalArticles
-        ? t('inventory.countedOf', { n: st.counts, total: totalArticles })
+      sub2 = (inv.status === 'offen' && total
+        ? t('inventory.countedOf', { n: st.counts, total })
         : t('inventory.countedN', { n: st.counts })) + ' · ' + t('inventory.checkedN', { n: st.checks });
     }
+    const scope = inv.location_id ? locById.get(inv.location_id) : null;
     return `<a class="list-item" href="#/inventur/${encodeURIComponent(inv.id)}">
-      <span class="thumb thumb-empty" aria-hidden="true">${icon('clipboard')}</span>
+      <span class="thumb thumb-empty" aria-hidden="true">${icon(inv.location_id ? 'location' : 'clipboard')}</span>
       <div class="li-main"><span class="li-title">${esc(inv.name)}</span>
+        ${inv.location_id ? `<span class="li-sub">${esc(t('inventory.scope', { path: scope ? locLabel(scope) : '?' }))}</span>` : ''}
         <span class="li-sub">${esc(sub1.join(' · '))}</span>
         ${sub2 ? `<span class="li-sub">${esc(sub2)}</span>` : ''}</div>
       <div class="li-end">${statusPillInv(inv.status)}
@@ -426,7 +569,16 @@ async function listRoute(ctx) {
     ${inventories.length ? `<div class="list">${items}</div>`
       : emptyHtml(t('inventory.none'), staff ? `<button type="button" class="btn primary" data-new>${icon('plus')}${esc(t('inventory.new'))}</button>` : '')}
   </div>`;
-  el.querySelectorAll('[data-new]').forEach((b) => b.addEventListener('click', () => newInventorySheet(ctx)));
+  el.querySelectorAll('[data-new]').forEach((b) => b.addEventListener('click', () => newInventorySheet(ctx, { locations })));
+
+  // #/inventur?ort=<L-Code>: Dialog «Neue Inventur» direkt mit diesem Lagerort öffnen
+  const ort = clean(q(ctx, 'ort') || '').toUpperCase();
+  if (ort && staff) {
+    const l = locations.find((x) => String(x.code || '').toUpperCase() === ort && !x.archived);
+    try { history.replaceState(null, '', '#/inventur'); } catch (e) { /* egal */ }
+    if (l) newInventorySheet(ctx, { locations, presetId: l.id });
+    else toast(t('inventory.scanNotFound', { code: ort }), 'error');
+  }
 }
 
 // ---------- Detail ----------
@@ -436,15 +588,17 @@ async function detailRoute(ctx) {
   const back = `<a class="back-link" href="#/inventur">${icon('back')}${esc(t('inventory.backToList'))}</a>`;
   el.innerHTML = `<div class="page">${back}<p class="muted" role="status">${esc(t('common.loading'))}</p></div>`;
 
-  let data, articles, machines, profiles;
+  let data, articles, machines, profiles, locations;
   try {
-    [data, articles, machines, profiles] = await Promise.all([
+    [data, articles, machines, profiles, locations] = await Promise.all([
       api.getInventory(params.id),
       api.listArticles({ includeArchived: true }),
       api.listMachines({ includeArchived: true }),
       api.listProfiles().catch(() => []),
+      api.listLocations({ includeArchived: true }).catch(() => []),
     ]);
   } catch (err) { errorPage(ctx, err, back); return; }
+  locations = Array.isArray(locations) ? locations : [];
   if (!data || !data.inventory) {
     el.innerHTML = `<div class="page">${back}${emptyHtml(t('inventory.notFound'))}</div>`;
     return;
@@ -461,14 +615,19 @@ async function detailRoute(ctx) {
   const checkBy = new Map((data.checks || []).map((c) => [c.machine_id, c]));
   const closedTs = inv.closed_at ? ts(inv.closed_at) : Infinity;
   const existed = (row) => !row.created_at || ts(row.created_at) <= closedTs;
+  // Inventur für einen Raum/Lagerort: nur dieser Teilbaum (bereits gezählte Einträge bleiben sichtbar)
+  const scopeLoc = inv.location_id ? (locations.find((l) => l.id === inv.location_id) || null) : null;
+  const scopeIds = inv.location_id ? locationSubtreeIds(locations, inv.location_id) : null;
+  const inScope = (locId) => !scopeIds || (!!locId && scopeIds.has(locId));
+  const scopeText = inv.location_id ? (scopeLoc ? locLabel(scopeLoc) : '?') : '';
 
   const aRows = (articles || [])
-    .filter((a) => countBy.has(a.id) || (!a.archived && existed(a)))
+    .filter((a) => countBy.has(a.id) || (!a.archived && existed(a) && inScope(a.location_id)))
     .map((a) => ({ a, c: countBy.get(a.id) || null }))
     .sort((x, y) => (x.a.location_path || '￿').localeCompare(y.a.location_path || '￿', locale())
       || String(x.a.name).localeCompare(String(y.a.name), locale()));
   const mRows = (machines || [])
-    .filter((m) => checkBy.has(m.id) || (!m.archived && existed(m)))
+    .filter((m) => checkBy.has(m.id) || (!m.archived && existed(m) && inScope(m.home_location_id)))
     .map((m) => ({ m, ch: checkBy.get(m.id) || null }))
     .sort((x, y) => String(x.m.name).localeCompare(String(y.m.name), locale()));
 
@@ -491,13 +650,18 @@ async function detailRoute(ctx) {
     ${back}
     <div class="page-head">
       <div><h1>${esc(inv.name)}</h1>
-        <div class="sub">${statusPillInv(inv.status)} ${esc(t('inventory.startedAt', { d: fmtDateTime(inv.started_at) }))} ${esc(t('inventory.startedBy', { name: startedWho }))}</div></div>
+        <div class="sub">${statusPillInv(inv.status)} ${esc(t('inventory.startedAt', { d: fmtDateTime(inv.started_at) }))} ${esc(t('inventory.startedBy', { name: startedWho }))}</div>
+        <div class="sub" style="margin-top:4px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">${icon('location')} ${inv.location_id
+          ? (scopeLoc ? `<a href="#/l/${encodeURIComponent(scopeLoc.code)}">${esc(t('inventory.scope', { path: scopeText }))}</a>` : esc(t('inventory.scope', { path: scopeText })))
+          : esc(t('inventory.scopeAll'))}</div></div>
       <div class="actions">
         ${open ? `<button type="button" class="btn primary" data-scan>${icon('scan')}${esc(t('inventory.scan'))}</button>` : ''}
+        ${open && staff ? `<button type="button" class="btn" data-unknown>${icon('camera')}${esc(t('inventory.unknown'))}</button>` : ''}
         <button type="button" class="btn" data-export>${icon('download')}${esc(t('inventory.export'))}</button>
         ${open && staff ? `<button type="button" class="btn" data-close>${icon('check')}${esc(t('inventory.close'))}</button>` : ''}
       </div>
     </div>
+    ${inv.location_id ? `<p class="hint" style="margin:0">${esc(t('inventory.scopeHint', { path: scopeText }))}</p>` : ''}
     ${inv.note ? `<p class="muted" style="margin:0">${esc(inv.note)}</p>` : ''}
     ${closedBlock}
     <div class="stats" data-summary aria-live="polite"></div>
@@ -535,22 +699,29 @@ async function detailRoute(ctx) {
   hydrateThumbs(el, api);
 
   // ----- Zeilen -----
+  // Soll / Ist / Differenz klar beschriftet; Zeilen mit Differenz bekommen einen farbigen Rand
   function aInfoHtml(r) {
     const unit = r.a.unit;
-    const parts = [`${esc(t('inventory.soll'))} <b>${esc(fmtQty(soll(r), unit))}</b>`];
+    const parts = [`<span class="nowrap">${esc(t('inventory.soll'))} <b>${esc(fmtQty(soll(r), unit))}</b></span>`];
     if (r.c) {
-      parts.push(diffPill(diffOf(r), unit));
+      parts.push(`<span class="nowrap">${esc(t('inventory.ist'))} <b>${esc(fmtQty(num(r.c.counted), unit))}</b></span>`);
+      parts.push(`<span class="nowrap">${esc(t('inventory.diff'))} ${diffPill(diffOf(r), unit)}</span>`);
       parts.push(esc(t('inventory.countedBy', { name: nameOf(r.c.counted_by) })));
     } else {
       parts.push(`<span class="muted">${esc(t('inventory.uncounted'))}</span>`);
     }
     return parts.join(' · ');
   }
+  function diffMark(r) {
+    const d = diffOf(r);
+    return d === null || d === 0 ? '' : `inset 4px 0 0 var(${d < 0 ? '--danger' : '--warn'})`;
+  }
   function aRowHtml(r) {
     const a = r.a;
     const id = 'inv-ist-' + a.id;
     const ist = r.c ? num(r.c.counted) : null;
-    return `<div class="list-item" data-aid="${esc(a.id)}" style="flex-wrap:wrap">
+    const mark = diffMark(r);
+    return `<div class="list-item" data-aid="${esc(a.id)}" style="flex-wrap:wrap${mark ? `;box-shadow:${mark}` : ''}">
       ${thumbHtml(a.photo_path, '', 'thumb', 'box')}
       <div class="li-main" style="flex:1 1 190px">
         <span class="li-title" style="white-space:normal">${esc(a.name)}${a.archived ? ` <span class="pill pill-muted">${esc(t('inventory.archived'))}</span>` : ''}</span>
@@ -601,6 +772,7 @@ async function detailRoute(ctx) {
   }
   function refreshARow(r) {
     r.el.querySelector('[data-info]').innerHTML = aInfoHtml(r);
+    r.el.style.boxShadow = diffMark(r);
   }
   function refreshMRow(r) {
     r.el.querySelector('[data-minfo]').innerHTML = checkInfo(r);
@@ -791,9 +963,10 @@ async function detailRoute(ctx) {
   async function handleCode(code, raw) {
     const c = String(code || parseScanned(raw) || '').trim().toUpperCase();
     if (!c) { toast(t('scan.unknown', { text: raw || '' }), 'error'); return; }
+    const outside = (list) => scopeIds && (list || []).some((x) => String(x.code).toUpperCase() === c);
     if (c.startsWith('M-')) {
       const r = mRows.find((x) => String(x.m.code).toUpperCase() === c);
-      if (!r) { toast(t('inventory.scanNotFound', { code: c }), 'error'); return; }
+      if (!r) { toast(t(outside(machines) ? 'inventory.scanOutside' : 'inventory.scanNotFound', { code: c }), 'error'); return; }
       try {
         await saveCheck(r, 'vorhanden', null);
         toast(t('inventory.scanMachineOk', { code: r.m.code, name: r.m.name }));
@@ -814,7 +987,7 @@ async function detailRoute(ctx) {
       return;
     }
     const r = aRows.find((x) => String(x.a.code).toUpperCase() === c);
-    if (!r) { toast(t('inventory.scanNotFound', { code: c }), 'error'); return; }
+    if (!r) { toast(t(outside(articles) ? 'inventory.scanOutside' : 'inventory.scanNotFound', { code: c }), 'error'); return; }
     closeScanner();
     focusArticle(r, true);
   }
@@ -830,61 +1003,97 @@ async function detailRoute(ctx) {
     });
   }
 
-  // ----- Export -----
-  function exportArticles() {
-    const rows = [[t('common.code'), t('common.name'), t('inventory.colLocation'), t('common.unit'), t('inventory.soll'),
-      t('inventory.ist'), t('inventory.diff'), t('inventory.countedByCol'), t('inventory.countedAtCol')]];
+  // ----- Export (CSV, Excel .xlsx, PDF) -----
+  const catOf = (a) => a.category_path || a.category || '';
+  function articleExportRows() {
+    const rows = [[t('common.code'), t('common.name'), t('inventory.colCategory'), t('inventory.colLocation'), t('common.unit'),
+      t('inventory.soll'), t('inventory.ist'), t('inventory.diff'), t('inventory.countedByCol'), t('inventory.colTime')]];
     for (const r of aRows) {
-      rows.push([r.a.code, r.a.name, r.a.location_path || '', unitLabel(r.a.unit), soll(r),
-        r.c ? num(r.c.counted) : '', r.c ? diffOf(r) : '', r.c ? nameOf(r.c.counted_by) : '', r.c ? fmtDateTime(r.c.counted_at) : '']);
+      rows.push([r.a.code, r.a.name, catOf(r.a), r.a.location_path || '', unitLabel(r.a.unit), soll(r),
+        r.c ? num(r.c.counted) : '', r.c ? diffOf(r) : '', r.c ? nameOf(r.c.counted_by) : '', r.c && r.c.counted_at ? fmtDateTime(r.c.counted_at) : '']);
     }
-    downloadCsv(`${slug(inv.name)}-${slug(t('inventory.tabArticles'))}.csv`, rows);
+    return rows;
   }
-  function exportMachines() {
-    const rows = [[t('common.code'), t('common.name'), t('inventory.result'), t('common.note'),
-      t('inventory.checkedByCol'), t('inventory.checkedAtCol'), t('common.status')]];
+  function machineExportRows() {
+    const rows = [[t('common.code'), t('common.name'), t('inventory.result'), t('inventory.colNote'),
+      t('inventory.checkedByCol'), t('inventory.colTime')]];
     for (const r of mRows) {
       rows.push([r.m.code, r.m.name, r.ch ? t('inventory.res.' + r.ch.result) : '', r.ch && r.ch.note ? r.ch.note : '',
-        r.ch ? nameOf(r.ch.checked_by) : '', r.ch ? fmtDateTime(r.ch.checked_at) : '', t('status.' + r.m.status)]);
+        r.ch ? nameOf(r.ch.checked_by) : '', r.ch && r.ch.checked_at ? fmtDateTime(r.ch.checked_at) : '']);
     }
-    downloadCsv(`${slug(inv.name)}-${slug(t('inventory.tabMachines'))}.csv`, rows);
+    return rows;
+  }
+  function exportArticles() {
+    downloadCsv(`${slug(inv.name)}-${slug(t('inventory.tabArticles'))}.csv`, articleExportRows());
+  }
+  function exportMachines() {
+    downloadCsv(`${slug(inv.name)}-${slug(t('inventory.tabMachines'))}.csv`, machineExportRows());
+  }
+  function exportXlsx() {
+    const c = counts();
+    const info = [
+      [t('inventory.name'), inv.name],
+      [t('common.status'), t('inventory.st.' + inv.status)],
+      [t('inventory.location'), inv.location_id ? scopeText : t('inventory.scopeAll')],
+      [t('inventory.startedAt', { d: fmtDateTime(inv.started_at) }), startedWho],
+      ...(!open ? [[t('inventory.closedInfo', { d: fmtDateTime(inv.closed_at), name: nameOf(inv.closed_by) }), inv.applied ? t('inventory.applied') : t('inventory.notApplied')]] : []),
+      [t('inventory.sumCounted'), `${c.counted}/${c.total}`],
+      [t('inventory.sumDiff'), c.diffs],
+      [t('inventory.sumChecked'), `${c.checked}/${c.mTotal}`],
+      [t('inventory.sumMissing'), c.missing],
+      ...(inv.note ? [[t('inventory.note'), inv.note]] : []),
+      [t('inventory.printed', { d: fmtDateTime(new Date().toISOString()) }), ''],
+    ];
+    const blob = xlsxBlob([
+      { name: t('inventory.tabArticles'), rows: articleExportRows() },
+      { name: t('inventory.tabMachines'), rows: machineExportRows() },
+      { name: t('inventory.sheetInfo'), rows: info, header: false, widths: [42, 60] },
+    ]);
+    downloadBlob(`${slug(inv.name)}.xlsx`, blob);
   }
   function printPdf() {
     const c = counts();
     const aBody = aRows.map((r) => {
       const d = diffOf(r);
-      return `<tr><td>${esc(r.a.code)}</td><td>${esc(r.a.name)}</td><td>${esc(r.a.location_path || '')}</td>
-        <td class="n">${esc(fmtQty(soll(r), r.a.unit))}</td><td class="n">${r.c ? esc(fmtQty(num(r.c.counted), r.a.unit)) : '–'}</td>
-        <td class="n">${d === null ? '' : esc(diffText(d, r.a.unit))}</td><td>${r.c ? esc(nameOf(r.c.counted_by)) : ''}</td></tr>`;
+      const cls = d !== null && d !== 0 ? ' class="diff"' : '';
+      return `<tr${cls}><td>${esc(r.a.code)}</td><td>${esc(r.a.name)}</td><td>${esc(catOf(r.a))}</td><td>${esc(r.a.location_path || '')}</td>
+        <td>${esc(unitLabel(r.a.unit))}</td><td class="n">${esc(fmtNum(soll(r)))}</td><td class="n">${r.c ? esc(fmtNum(num(r.c.counted))) : '–'}</td>
+        <td class="n">${d === null ? '' : esc(d === 0 ? '±0' : (d > 0 ? '+' : '−') + fmtNum(Math.abs(d)))}</td>
+        <td>${r.c ? esc(nameOf(r.c.counted_by)) : ''}</td><td>${r.c && r.c.counted_at ? esc(fmtDateTime(r.c.counted_at)) : ''}</td></tr>`;
     }).join('');
-    const mBody = mRows.map((r) => `<tr><td>${esc(r.m.code)}</td><td>${esc(r.m.name)}</td>
-      <td>${r.ch ? esc(t('inventory.res.' + r.ch.result)) : '–'}</td><td>${r.ch && r.ch.note ? esc(r.ch.note) : ''}</td>
-      <td>${onLoan(r.m) ? esc(t('inventory.onLoanBy', { name: r.m.open_borrower_name || '–', d: fmtDate(r.m.open_since) })) : ''}</td>
-      <td>${r.ch ? esc(nameOf(r.ch.checked_by)) : ''}</td></tr>`).join('');
+    const mBody = mRows.map((r) => `<tr${r.ch && (r.ch.result === 'fehlt' || r.ch.result === 'defekt') ? ' class="diff"' : ''}><td>${esc(r.m.code)}</td><td>${esc(r.m.name)}</td>
+      <td>${r.ch ? esc(t('inventory.res.' + r.ch.result)) : '–'}</td>
+      <td>${[r.ch && r.ch.note ? r.ch.note : '', onLoan(r.m) ? t('inventory.onLoanBy', { name: r.m.open_borrower_name || '–', d: fmtDate(r.m.open_since) }) : ''].filter(Boolean).map(esc).join('<br>')}</td>
+      <td>${r.ch ? esc(nameOf(r.ch.checked_by)) : ''}</td><td>${r.ch && r.ch.checked_at ? esc(fmtDateTime(r.ch.checked_at)) : ''}</td></tr>`).join('');
     const meta = [
-      t('inventory.st.' + inv.status),
-      t('inventory.startedAt', { d: fmtDateTime(inv.started_at) }) + ' ' + t('inventory.startedBy', { name: startedWho }),
+      [t('inventory.date'), t('inventory.startedAt', { d: fmtDateTime(inv.started_at) }) + ' ' + t('inventory.startedBy', { name: startedWho })
+        + (!open ? ' · ' + t('inventory.closedInfo', { d: fmtDateTime(inv.closed_at), name: nameOf(inv.closed_by) }) : '')],
+      [t('inventory.location'), inv.location_id ? scopeText : t('inventory.scopeAll')],
+      [t('common.status'), t('inventory.st.' + inv.status) + (!open ? ' · ' + (inv.applied ? t('inventory.applied') : t('inventory.notApplied')) : '')],
     ];
-    if (!open) meta.push(t('inventory.closedInfo', { d: fmtDateTime(inv.closed_at), name: nameOf(inv.closed_by) }), inv.applied ? t('inventory.applied') : t('inventory.notApplied'));
     const pa = printArea();
     pa.innerHTML = `<style>
-      @page { size: A4 portrait; margin: 12mm; }
-      .inv-print { font: 9.5pt/1.35 "Segoe UI", Arial, sans-serif; color: #000; background: #fff; }
-      .inv-print h1 { font-size: 16pt; margin: 0 0 4pt; }
+      @page { size: A4 landscape; margin: 11mm; }
+      .inv-print { font: 9pt/1.35 "Segoe UI", Arial, sans-serif; color: #000; background: #fff; }
+      .inv-print h1 { font-size: 16pt; margin: 0 0 6pt; }
       .inv-print h2 { font-size: 12pt; margin: 14pt 0 5pt; }
       .inv-print p { margin: 0 0 4pt; }
       .inv-print table { width: 100%; border-collapse: collapse; }
+      .inv-print table.meta { width: auto; margin-bottom: 6pt; }
+      .inv-print table.meta td { border: 0; padding: 1pt 12pt 1pt 0; }
       .inv-print th, .inv-print td { border: 1px solid #999; padding: 2pt 4pt; text-align: left; vertical-align: top; }
       .inv-print th { background: #eee; }
-      .inv-print td.n { text-align: right; white-space: nowrap; }
+      .inv-print td.n { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
       .inv-print tr { break-inside: avoid; }
+      .inv-print tr.diff td { font-weight: 700; background: #f3f3f3; }
+      .inv-print thead { display: table-header-group; }
       .inv-print .sum { display: flex; flex-wrap: wrap; gap: 6pt 18pt; margin: 6pt 0; }
-      .inv-print .sign { display: flex; gap: 36pt; margin-top: 28pt; }
-      .inv-print .sign div { border-top: 1px solid #000; padding-top: 2pt; min-width: 170pt; }
+      .inv-print .sign { display: flex; gap: 30pt; margin-top: 30pt; break-inside: avoid; }
+      .inv-print .sign div { border-top: 1px solid #000; padding-top: 2pt; flex: 1; }
     </style>
     <div class="inv-print">
       <h1>${esc(t('inventory.printTitle', { name: inv.name }))}</h1>
-      <p>${esc(meta.join(' · '))}</p>
+      <table class="meta">${meta.map(([k, v]) => `<tr><td><b>${esc(k)}</b></td><td>${esc(v)}</td></tr>`).join('')}</table>
       ${inv.note ? `<p>${esc(inv.note)}</p>` : ''}
       <div class="sum">
         <span>${esc(t('inventory.sumCounted'))}: <b>${c.counted}/${c.total}</b></span>
@@ -892,15 +1101,16 @@ async function detailRoute(ctx) {
         <span>${esc(t('inventory.sumChecked'))}: <b>${c.checked}/${c.mTotal}</b></span>
         <span>${esc(t('inventory.sumMissing'))}: <b>${c.missing}</b>${c.defect ? ' ' + esc(t('inventory.sumDefect', { n: c.defect })) : ''}</span>
       </div>
-      <h2>${esc(t('inventory.tabArticles'))}</h2>
-      <table><thead><tr><th>${esc(t('common.code'))}</th><th>${esc(t('common.name'))}</th><th>${esc(t('inventory.colLocation'))}</th>
-        <th>${esc(t('inventory.soll'))}</th><th>${esc(t('inventory.ist'))}</th><th>${esc(t('inventory.diff'))}</th><th>${esc(t('inventory.countedByCol'))}</th></tr></thead>
+      <h2>${esc(t('inventory.tabArticles'))} (${aRows.length})</h2>
+      <table><thead><tr><th>${esc(t('common.code'))}</th><th>${esc(t('common.name'))}</th><th>${esc(t('inventory.colCategory'))}</th>
+        <th>${esc(t('inventory.colLocation'))}</th><th>${esc(t('common.unit'))}</th><th>${esc(t('inventory.soll'))}</th><th>${esc(t('inventory.ist'))}</th>
+        <th>${esc(t('inventory.diff'))}</th><th>${esc(t('inventory.countedByCol'))}</th><th>${esc(t('inventory.colTime'))}</th></tr></thead>
         <tbody>${aBody}</tbody></table>
-      <h2>${esc(t('inventory.tabMachines'))}</h2>
+      <h2>${esc(t('inventory.tabMachines'))} (${mRows.length})</h2>
       <table><thead><tr><th>${esc(t('common.code'))}</th><th>${esc(t('common.name'))}</th><th>${esc(t('inventory.result'))}</th>
-        <th>${esc(t('common.note'))}</th><th>${esc(t('inventory.f.onLoan'))}</th><th>${esc(t('inventory.checkedByCol'))}</th></tr></thead>
+        <th>${esc(t('inventory.colNote'))}</th><th>${esc(t('inventory.checkedByCol'))}</th><th>${esc(t('inventory.colTime'))}</th></tr></thead>
         <tbody>${mBody}</tbody></table>
-      <div class="sign"><div>${esc(t('inventory.signCount'))}</div><div>${esc(t('inventory.signApprove'))}</div></div>
+      <div class="sign"><div>${esc(t('inventory.signPlace'))}</div><div>${esc(t('inventory.signCount'))}</div><div>${esc(t('inventory.signApprove'))}</div></div>
       <p style="margin-top:10pt;color:#555">${esc(t('inventory.printed', { d: fmtDateTime(new Date().toISOString()) }))}</p>
     </div>`;
     const cleanup = () => { pa.innerHTML = ''; window.removeEventListener('afterprint', cleanup); };
@@ -911,6 +1121,7 @@ async function detailRoute(ctx) {
     sheet({
       title: t('inventory.export'),
       body: `<div class="stack">
+        <button type="button" class="btn" data-x="x">${icon('download')}${esc(t('inventory.exportXlsx'))}</button>
         <button type="button" class="btn" data-x="a">${icon('download')}${esc(t('inventory.exportArticles'))}</button>
         <button type="button" class="btn" data-x="m">${icon('download')}${esc(t('inventory.exportMachines'))}</button>
         <button type="button" class="btn" data-x="p">${icon('print')}${esc(t('inventory.exportPdf'))}</button>
@@ -923,12 +1134,124 @@ async function detailRoute(ctx) {
             try {
               if (x === 'a') exportArticles();
               else if (x === 'm') exportMachines();
+              else if (x === 'x') exportXlsx();
               else printPdf();
             } catch (err) { toast(errorText(err), 'error'); }
           }, 220);
         }));
       },
     });
+  }
+
+  // ----- Unbekanntes Objekt erfassen (Foto → «KI-Erkennung prüfen») -----
+  function rootOf(l) {
+    let cur = l;
+    let guard = 0;
+    while (cur && cur.parent_id && guard++ < 100) cur = locations.find((x) => x.id === cur.parent_id) || null;
+    return cur;
+  }
+  async function unknownSheet() {
+    const pool = locations.filter((l) => !l.archived && inScope(l.id)).sort(byPath);
+    const scanned = locPath ? locations.find((l) => l.path === locPath) : null;
+    const defLoc = (scanned && inScope(scanned.id) ? scanned.id : '') || inv.location_id || '';
+    let file = null;
+    let previewUrl = '';
+    const res = await sheet({
+      title: t('inventory.unknown'),
+      body: `<p class="hint" style="margin:0">${esc(t('inventory.unknownIntro'))}</p>
+        <div class="field">
+          <span class="lbl">${esc(t('inventory.unknownPhoto'))} <span aria-hidden="true">*</span></span>
+          <div class="row">
+            <button type="button" class="btn" data-pick="cam">${icon('camera')}${esc(t('btn.takePhoto'))}</button>
+            <button type="button" class="btn" data-pick="file">${icon('image')}${esc(t('inventory.choosePhoto'))}</button>
+          </div>
+          <input type="file" accept="image/*" capture="environment" data-file="cam" hidden>
+          <input type="file" accept="image/*" data-file="file" hidden>
+          <div data-preview hidden style="margin-top:8px"><img alt="${esc(t('inventory.photoPreview'))}" style="display:block;max-width:100%;max-height:240px;border-radius:10px;background:var(--surface-3)">
+            <div class="small muted" data-fname style="margin-top:4px;overflow-wrap:anywhere"></div></div>
+        </div>
+        <div class="field">
+          <label for="inv-u-name">${esc(t('inventory.unknownName'))} <span aria-hidden="true">*</span></label>
+          <input id="inv-u-name" type="text" maxlength="200" autocomplete="off" placeholder="${esc(t('inventory.unknownNamePh'))}">
+        </div>
+        <div class="field">
+          <label for="inv-u-loc">${esc(t('inventory.unknownWhere'))} <span aria-hidden="true">*</span></label>
+          <select id="inv-u-loc">
+            <option value="">${esc(t('inventory.unknownChoose'))}</option>
+            ${pool.map((l) => `<option value="${esc(l.id)}"${l.id === defLoc ? ' selected' : ''}>${esc(locLabel(l))}</option>`).join('')}
+          </select>
+        </div>
+        <div class="field">
+          <label for="inv-u-notes">${esc(t('inventory.unknownNotes'))} <span class="muted">(${esc(t('common.optional'))})</span></label>
+          <textarea id="inv-u-notes" rows="2" maxlength="1000" placeholder="${esc(t('inventory.unknownNotesPh'))}"></textarea>
+        </div>
+        <p class="small muted" data-busy hidden role="status">${esc(t('inventory.unknownSaving'))}</p>`,
+      onOpen: (sh) => {
+        const prev = sh.querySelector('[data-preview]');
+        sh.querySelectorAll('[data-pick]').forEach((b) => b.addEventListener('click', () => sh.querySelector(`[data-file="${b.dataset.pick}"]`).click()));
+        sh.querySelectorAll('[data-file]').forEach((inp) => inp.addEventListener('change', () => {
+          const f = inp.files && inp.files[0];
+          inp.value = '';
+          if (!f) return;
+          file = f;
+          if (previewUrl) URL.revokeObjectURL(previewUrl);
+          previewUrl = URL.createObjectURL(f);
+          prev.querySelector('img').src = previewUrl;
+          prev.querySelector('[data-fname]').textContent = f.name || '';
+          prev.hidden = false;
+          const n = sh.querySelector('#inv-u-name');
+          if (!n.value) n.focus();
+        }));
+      },
+      actions: [
+        { label: t('btn.cancel'), kind: 'ghost', value: null },
+        {
+          label: t('inventory.unknownSave'), kind: 'primary', icon: 'check',
+          onClick: async (sh) => {
+            const err = (key, sel) => {
+              const box = sh.querySelector('.sheet-error');
+              box.textContent = t(key);
+              box.hidden = false;
+              if (sel) { const f = sh.querySelector(sel); if (f) f.focus(); }
+              return false;
+            };
+            if (!file) return err('inventory.unknownNeedPhoto', '[data-pick="cam"]');
+            const name = clean(sh.querySelector('#inv-u-name').value);
+            if (!name) return err('err.name_required', '#inv-u-name');
+            const locationId = sh.querySelector('#inv-u-loc').value;
+            if (!locationId) return err('inventory.unknownNeedLocation', '#inv-u-loc');
+            const notes = clean(sh.querySelector('#inv-u-notes').value) || null;
+            const busy = sh.querySelector('[data-busy]');
+            busy.hidden = false;
+            try {
+              let sha = null;
+              try { sha = await sha256Hex(file); } catch (e) { sha = null; }   // die API rechnet sonst selbst
+              const imp = await api.importPhoto(file, sha ? { locationId, sha256: sha } : { locationId });
+              const photo = imp && imp.photo;
+              if (!photo || !photo.id) throw Object.assign(new Error('unknown'), { code: 'unknown' });
+              const det = await api.addDetection(photo.id, { name, notes, target_location_id: locationId });
+              return { det, duplicate: !!(imp && imp.duplicate), locationId };
+            } finally {
+              busy.hidden = true;
+            }
+          },
+        },
+      ],
+    });
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    if (!res || !res.det) return;
+    const root = rootOf(locations.find((l) => l.id === res.locationId));
+    const reviewPath = 'organisieren/pruefen' + (root && root.code ? '?raum=' + encodeURIComponent(root.code) : '');
+    const go = await sheet({
+      title: t('inventory.unknownTitle'),
+      body: `<div class="alert ok" role="status">${icon('check')}<span>${esc(t('inventory.unknownDone'))}</span></div>
+        ${res.duplicate ? `<p class="hint" style="margin:0">${esc(t('inventory.unknownDup'))}</p>` : ''}`,
+      actions: [
+        { label: t('inventory.continue'), kind: 'ghost', value: false },
+        { label: t('inventory.toReview'), kind: 'primary', icon: 'sparkle', value: true },
+      ],
+    });
+    if (go === true) ctx.go(reviewPath);
   }
 
   // ----- Abschliessen -----
@@ -1050,6 +1373,8 @@ async function detailRoute(ctx) {
     if (scanBtn) scanBtn.addEventListener('click', startScan);
   }
   $('[data-export]').addEventListener('click', exportSheet);
+  const unknownBtn = $('[data-unknown]');
+  if (unknownBtn) unknownBtn.addEventListener('click', () => unknownSheet().catch((err) => toast(errorText(err), 'error')));
   const closeBtn = $('[data-close]');
   if (closeBtn) closeBtn.addEventListener('click', closeSheet);
 }

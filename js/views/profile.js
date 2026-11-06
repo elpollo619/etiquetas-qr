@@ -1,6 +1,7 @@
 // Profil: Name, Sprache, Rolle, Passwort, Demo-Benutzer, Abmelden, Installations-Tipp
 import { t, registerStrings, LANGS, getLang, setLang } from '../i18n.js';
 import { esc, clean, icon, errorText, toast, roleLabel } from '../util.js';
+import { THEMES, getTheme, setTheme } from '../theme.js';
 
 registerStrings({
   de: {
@@ -31,6 +32,11 @@ registerStrings({
     'profile.installAndroid': 'Android (Chrome): Menü ⋮ → «App installieren» bzw. «Zum Startbildschirm hinzufügen».',
     'profile.installText': 'Danach startet die App direkt vom Startbildschirm – ideal zum schnellen Scannen.',
     'profile.installed': 'Die App ist auf diesem Gerät bereits installiert.',
+    'profile.theme': 'Darstellung',
+    'profile.theme.system': 'System',
+    'profile.theme.light': 'Hell',
+    'profile.theme.dark': 'Dunkel',
+    'profile.themeHint': 'Gilt für dieses Gerät. «System» folgt der Einstellung von Handy oder Computer.',
   },
   pt: {
     'profile.title': 'Perfil',
@@ -60,6 +66,11 @@ registerStrings({
     'profile.installAndroid': 'Android (Chrome): menu ⋮ → «Instalar app» ou «Adicionar ao ecrã principal».',
     'profile.installText': 'Depois a app abre diretamente a partir do ecrã principal – ideal para ler códigos QR rapidamente.',
     'profile.installed': 'A app já está instalada neste dispositivo.',
+    'profile.theme': 'Aparência',
+    'profile.theme.system': 'Sistema',
+    'profile.theme.light': 'Claro',
+    'profile.theme.dark': 'Escuro',
+    'profile.themeHint': 'Aplica-se a este dispositivo. «Sistema» segue a definição do telemóvel ou computador.',
   },
   es: {
     'profile.title': 'Perfil',
@@ -89,6 +100,11 @@ registerStrings({
     'profile.installAndroid': 'Android (Chrome): menú ⋮ → «Instalar aplicación» o «Añadir a pantalla de inicio».',
     'profile.installText': 'Después la app se abre directamente desde la pantalla de inicio: ideal para escanear rápido.',
     'profile.installed': 'La app ya está instalada en este dispositivo.',
+    'profile.theme': 'Apariencia',
+    'profile.theme.system': 'Sistema',
+    'profile.theme.light': 'Claro',
+    'profile.theme.dark': 'Oscuro',
+    'profile.themeHint': 'Se aplica a este dispositivo. «Sistema» sigue el ajuste del móvil o del ordenador.',
   },
 });
 
@@ -146,6 +162,14 @@ async function profileRoute(ctx) {
             ${LANGS.map((l) => `<button type="button" data-lang="${esc(l.code)}" lang="${esc(l.code)}" aria-pressed="${l.code === lang ? 'true' : 'false'}">${esc(l.label)}</button>`).join('')}
           </div>
           <span class="hint">${esc(t('profile.langHint'))}</span>
+        </div>
+        <div class="divider"></div>
+        <div class="field">
+          <span class="lbl" id="pf-theme-l">${esc(t('profile.theme'))}</span>
+          <div class="lang-switch" role="group" aria-labelledby="pf-theme-l" aria-describedby="pf-theme-h" style="align-self:flex-start">
+            ${THEMES.map((th) => `<button type="button" data-theme-choice="${esc(th)}" aria-pressed="${th === getTheme() ? 'true' : 'false'}">${esc(t('profile.theme.' + th))}</button>`).join('')}
+          </div>
+          <span class="hint" id="pf-theme-h">${esc(t('profile.themeHint'))}</span>
         </div>
         <div class="divider"></div>
         <dl class="kv">
@@ -233,6 +257,12 @@ async function profileRoute(ctx) {
       toast(errorText(err), 'error');
       el.querySelectorAll('[data-lang]').forEach((x) => { x.disabled = false; });
     }
+  }));
+
+  // Darstellung (System / Hell / Dunkel) – sofort, nur auf diesem Gerät
+  el.querySelectorAll('[data-theme-choice]').forEach((b) => b.addEventListener('click', () => {
+    setTheme(b.dataset.themeChoice);
+    el.querySelectorAll('[data-theme-choice]').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
   }));
 
   // Passwort ändern

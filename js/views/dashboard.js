@@ -52,6 +52,32 @@ registerStrings({
     'dashboard.agoH': 'vor {n} Std',
     'dashboard.agoDay': 'vor 1 Tag',
     'dashboard.agoDays': 'vor {n} Tagen',
+    'dashboard.searchLabel': 'Im ganzen Lager suchen',
+    'dashboard.searchPh': 'Was suchst du? Name, Marke, Code, Person …',
+    'dashboard.orgTitle': 'Lager organisieren',
+    'dashboard.orgText': 'Räume fotografieren, Erkanntes prüfen, Lagerorte und Etiketten ordnen.',
+    'dashboard.orgOpen': '{open} von {total} Räumen noch offen',
+    'dashboard.orgAllDone': 'Alle {total} Räume organisiert',
+    'dashboard.orgNoSpaces': 'Noch keine Räume erfasst',
+    'dashboard.orgReview': '{n} Objekte zu prüfen',
+    'dashboard.secStock': 'Bestand',
+    'dashboard.secLoans': 'Ausleihe',
+    'dashboard.secOrg': 'Organisation',
+    'dashboard.statAllItems': 'Artikel gesamt',
+    'dashboard.statAllItemsSub': '{m} Einzelinventar + {a} Bestandsartikel',
+    'dashboard.statSingle': 'Einzelinventar',
+    'dashboard.statStockItems': 'Bestandsartikel',
+    'dashboard.statSets': 'Sets',
+    'dashboard.statNoLocation': 'Ohne Lagerort',
+    'dashboard.statLocations': 'Lagerorte',
+    'dashboard.statOverdueDue': 'Überfällig (Rückgabe fällig)',
+    'dashboard.statSpacesDone': 'Räume organisiert',
+    'dashboard.statSpacesOpen': 'Räume offen',
+    'dashboard.statPhotos': 'Fotos analysiert',
+    'dashboard.statReview': 'Objekte zu prüfen',
+    'dashboard.statMoves7': 'Bewegungen (7 Tage)',
+    'dashboard.of': 'von {n}',
+    'dashboard.orgStatsMissing': 'Die Kennzahlen zur Organisation konnten nicht geladen werden.',
   },
   pt: {
     'dashboard.morning': 'Bom dia', 'dashboard.day': 'Boa tarde', 'dashboard.evening': 'Boa noite',
@@ -102,6 +128,32 @@ registerStrings({
     'dashboard.agoH': 'há {n} h',
     'dashboard.agoDay': 'há 1 dia',
     'dashboard.agoDays': 'há {n} dias',
+    'dashboard.searchLabel': 'Pesquisar em todo o armazém',
+    'dashboard.searchPh': 'O que procuras? Nome, marca, código, pessoa …',
+    'dashboard.orgTitle': 'Organizar o armazém',
+    'dashboard.orgText': 'Fotografar divisões, verificar o que foi reconhecido, ordenar localizações e etiquetas.',
+    'dashboard.orgOpen': '{open} de {total} divisões ainda em aberto',
+    'dashboard.orgAllDone': 'Todas as {total} divisões organizadas',
+    'dashboard.orgNoSpaces': 'Ainda não há divisões registadas',
+    'dashboard.orgReview': '{n} objetos por verificar',
+    'dashboard.secStock': 'Stock',
+    'dashboard.secLoans': 'Empréstimos',
+    'dashboard.secOrg': 'Organização',
+    'dashboard.statAllItems': 'Total de artigos',
+    'dashboard.statAllItemsSub': '{m} artigos individuais + {a} materiais com stock',
+    'dashboard.statSingle': 'Artigos individuais',
+    'dashboard.statStockItems': 'Material com stock',
+    'dashboard.statSets': 'Conjuntos',
+    'dashboard.statNoLocation': 'Sem localização',
+    'dashboard.statLocations': 'Localizações',
+    'dashboard.statOverdueDue': 'Em atraso (devolução vencida)',
+    'dashboard.statSpacesDone': 'Divisões organizadas',
+    'dashboard.statSpacesOpen': 'Divisões em aberto',
+    'dashboard.statPhotos': 'Fotos analisadas',
+    'dashboard.statReview': 'Objetos por verificar',
+    'dashboard.statMoves7': 'Movimentos (7 dias)',
+    'dashboard.of': 'de {n}',
+    'dashboard.orgStatsMissing': 'Não foi possível carregar os números da organização.',
   },
   es: {
     'dashboard.morning': 'Buenos días', 'dashboard.day': 'Buenas tardes', 'dashboard.evening': 'Buenas noches',
@@ -152,10 +204,37 @@ registerStrings({
     'dashboard.agoH': 'hace {n} h',
     'dashboard.agoDay': 'hace 1 día',
     'dashboard.agoDays': 'hace {n} días',
+    'dashboard.searchLabel': 'Buscar en todo el almacén',
+    'dashboard.searchPh': '¿Qué buscas? Nombre, marca, código, persona …',
+    'dashboard.orgTitle': 'Organizar el almacén',
+    'dashboard.orgText': 'Fotografiar salas, revisar lo reconocido, ordenar ubicaciones y etiquetas.',
+    'dashboard.orgOpen': '{open} de {total} salas aún pendientes',
+    'dashboard.orgAllDone': 'Las {total} salas están organizadas',
+    'dashboard.orgNoSpaces': 'Aún no hay salas registradas',
+    'dashboard.orgReview': '{n} objetos por revisar',
+    'dashboard.secStock': 'Existencias',
+    'dashboard.secLoans': 'Préstamos',
+    'dashboard.secOrg': 'Organización',
+    'dashboard.statAllItems': 'Artículos en total',
+    'dashboard.statAllItemsSub': '{m} activos individuales + {a} materiales con stock',
+    'dashboard.statSingle': 'Activos individuales',
+    'dashboard.statStockItems': 'Material con stock',
+    'dashboard.statSets': 'Sets',
+    'dashboard.statNoLocation': 'Sin ubicación',
+    'dashboard.statLocations': 'Ubicaciones',
+    'dashboard.statOverdueDue': 'Con retraso (devolución vencida)',
+    'dashboard.statSpacesDone': 'Salas organizadas',
+    'dashboard.statSpacesOpen': 'Salas pendientes',
+    'dashboard.statPhotos': 'Fotos analizadas',
+    'dashboard.statReview': 'Objetos por revisar',
+    'dashboard.statMoves7': 'Movimientos (7 días)',
+    'dashboard.of': 'de {n}',
+    'dashboard.orgStatsMissing': 'No se pudieron cargar las cifras de organización.',
   },
 });
 
 // ---------- private Hilfen ----------
+let orgErrorShown = false;   // Fehler der Organisations-Kennzahlen nur einmal pro Sitzung als Meldung zeigen
 const href = (code) => '#/' + routeForCode(code);
 const ts = (iso) => { const n = new Date(iso || 0).getTime(); return Number.isFinite(n) ? n : 0; };
 
@@ -185,9 +264,9 @@ function firstName(full) {
   return s ? s.split(/\s+/)[0] : '';
 }
 
-function section(title, inner, moreHref) {
-  return `<section class="section" aria-label="${esc(title)}">
-    <div class="section-head"><h2>${esc(title)}</h2>${moreHref
+function section(title, inner, moreHref, id) {
+  return `<section class="section" aria-label="${esc(title)}"${id ? ` id="${esc(id)}"` : ''}>
+    <div class="section-head"><h2${id ? ' tabindex="-1"' : ''}>${esc(title)}</h2>${moreHref
       ? `<a class="btn ghost sm" href="${esc(moreHref)}">${esc(t('dashboard.showAll'))}${icon('chevron')}</a>` : ''}</div>
     ${inner}
   </section>`;
@@ -215,32 +294,103 @@ function myLoansHtml(mine) {
     <div><strong>${esc(head)}</strong><ul style="margin:4px 0 0;padding-left:18px">${items}</ul></div></div>`;
 }
 
-function statsHtml({ machines, articles, openLoans }) {
+const n0 = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
+
+// Kachel: Link (href) oder Knopf, der zu einem Abschnitt dieser Seite springt (scrollTo)
+function tileHtml(x) {
+  const inner = `<span class="stat-num">${esc(fmtNum(x.n))}${x.of !== undefined
+    ? `<span class="stat-of"> ${esc(t('dashboard.of', { n: fmtNum(x.of) }))}</span>` : ''}</span>
+    <span class="stat-label">${esc(x.label)}</span>${x.sub ? `<span class="stat-note">${esc(x.sub)}</span>` : ''}`;
+  if (x.scrollTo) return `<button type="button" class="stat dash-stat-btn ${x.cls || ''}" data-scroll="${esc(x.scrollTo)}">${inner}</button>`;
+  return `<a class="stat ${x.cls || ''}" href="${esc(x.href)}">${inner}</a>`;
+}
+function tileGroup(title, tiles) {
+  const list = tiles.filter(Boolean);
+  if (!list.length) return '';
+  return `<section class="section" aria-label="${esc(title)}"><h2>${esc(title)}</h2>
+    <div class="stats">${list.map(tileHtml).join('')}</div></section>`;
+}
+
+// Kennzahlen: aus api.orgStats() (org = Zeile) – sonst nur, was sich aus den geladenen Listen exakt zählen lässt.
+function statsHtml({ machines, articles, openLoans, org }) {
   const cnt = (st) => machines.filter((m) => m.status === st).length;
-  const overdue = openLoans.filter((l) => l.overdue).length;
+  const has = !!org;
+  const mT = has ? n0(org.machines_total) : machines.length;
+  const aT = has ? n0(org.articles_total) : articles.length;
+  const sets = has ? n0(org.sets_total) : machines.filter((m) => m.is_set).length;
+  const noLoc = has ? n0(org.items_without_location)
+    : articles.filter((a) => !a.location_id).length + machines.filter((m) => !m.home_location_id).length;
   const low = articles.filter((a) => a.low_stock).length;
-  const tiles = [
-    { n: articles.length, label: t('dashboard.statArticles'), href: '#/artikel' },
-    { n: machines.length, label: t('dashboard.statMachines'), href: '#/maschinen' },
-    { n: cnt('verfuegbar'), label: t('dashboard.statAvailable'), href: '#/maschinen?status=verfuegbar', cls: 'ok' },
-    { n: cnt('ausgeliehen'), label: t('dashboard.statLoaned'), href: '#/ausgeliehen', cls: 'info' },
-    { n: overdue, label: t('dashboard.statOverdue'), href: '#/ausgeliehen?filter=overdue', cls: overdue ? 'danger' : '' },
-    { n: cnt('defekt'), label: t('dashboard.statDefect'), href: '#/maschinen?status=defekt' },
+  const loaned = has ? n0(org.loans_open) : cnt('ausgeliehen');
+  const overdue = has ? n0(org.loans_overdue) : openLoans.filter((l) => l.overdue).length;
+  const stock = [
+    { n: mT + aT, label: t('dashboard.statAllItems'), sub: t('dashboard.statAllItemsSub', { m: fmtNum(mT), a: fmtNum(aT) }), href: '#/suche', cls: 'lead' },
+    { n: mT, label: t('dashboard.statSingle'), href: '#/maschinen' },
+    { n: aT, label: t('dashboard.statStockItems'), href: '#/artikel' },
+    { n: sets, label: t('dashboard.statSets'), href: '#/suche?typ=set' },
+    has && { n: n0(org.locations_total), label: t('dashboard.statLocations'), href: '#/lagerorte' },
+    { n: noLoc, label: t('dashboard.statNoLocation'), href: '#/suche?ort=ohne', cls: noLoc ? 'warn' : '' },
     { n: low, label: t('dashboard.statLow'), href: '#/artikel?filter=low', cls: low ? 'warn' : '' },
+    has && { n: n0(org.movements_7d), label: t('dashboard.statMoves7'), scrollTo: 'dash-movements' },
   ];
-  return `<section class="section" aria-label="${esc(t('dashboard.figures'))}"><h2 class="sr-only">${esc(t('dashboard.figures'))}</h2>
-    <div class="stats">${tiles.map((x) => `<a class="stat ${x.cls || ''}" href="${esc(x.href)}">
-      <span class="stat-num">${esc(fmtNum(x.n))}</span><span class="stat-label">${esc(x.label)}</span></a>`).join('')}</div></section>`;
+  const loans = [
+    { n: cnt('verfuegbar'), label: t('dashboard.statAvailable'), href: '#/maschinen?status=verfuegbar', cls: 'ok' },
+    { n: loaned, label: t('dashboard.statLoaned'), href: '#/ausgeliehen', cls: 'info' },
+    { n: overdue, label: t('dashboard.statOverdueDue'), href: '#/ausgeliehen?filter=overdue', cls: overdue ? 'danger' : '' },
+    { n: cnt('defekt'), label: t('dashboard.statDefect'), href: '#/maschinen?status=defekt' },
+  ];
+  let orgTiles = [];
+  if (has) {
+    const sT = n0(org.spaces_total), sD = n0(org.spaces_organized), sOpen = Math.max(0, sT - sD);
+    const review = n0(org.detections_open);
+    orgTiles = [
+      { n: sD, of: sT, label: t('dashboard.statSpacesDone'), href: '#/organisieren', cls: sT && !sOpen ? 'ok' : '' },
+      { n: sOpen, label: t('dashboard.statSpacesOpen'), href: '#/organisieren', cls: sOpen ? 'warn' : '' },
+      { n: n0(org.photos_analyzed), of: n0(org.photos_total), label: t('dashboard.statPhotos'), href: '#/organisieren' },
+      { n: review, label: t('dashboard.statReview'), href: '#/organisieren/pruefen', cls: review ? 'warn' : '' },
+    ];
+  }
+  return `<h2 class="sr-only">${esc(t('dashboard.figures'))}</h2>
+    ${tileGroup(t('dashboard.secStock'), stock)}
+    ${tileGroup(t('dashboard.secLoans'), loans)}
+    ${tileGroup(t('dashboard.secOrg'), orgTiles)}`;
+}
+
+// Schnellzugriff: Suchfeld (→ #/suche?q=) und «Lager organisieren»
+function quickHtml(org) {
+  let line = t('dashboard.orgText');
+  if (org) {
+    const total = n0(org.spaces_total), open = Math.max(0, total - n0(org.spaces_organized)), review = n0(org.detections_open);
+    const parts = [total === 0 ? t('dashboard.orgNoSpaces')
+      : open ? t('dashboard.orgOpen', { open: fmtNum(open), total: fmtNum(total) }) : t('dashboard.orgAllDone', { total: fmtNum(total) })];
+    if (review) parts.push(t('dashboard.orgReview', { n: fmtNum(review) }));
+    line = parts.join(' · ');
+  }
+  return `<div class="dash-quick">
+    <form class="dash-search" role="search" data-dash-search>
+      <div class="searchbar">${icon('search')}<input type="search" name="q" enterkeyhint="search" autocomplete="off"
+        aria-label="${esc(t('dashboard.searchLabel'))}" placeholder="${esc(t('dashboard.searchPh'))}"></div>
+      <button type="submit" class="btn primary">${esc(t('btn.search'))}</button>
+    </form>
+    <a class="dash-org" href="#/organisieren">
+      <span class="dash-org-ic" aria-hidden="true">${icon('sparkle')}</span>
+      <span class="dash-org-txt"><b>${esc(t('dashboard.orgTitle'))}</b><span>${esc(line)}</span></span>
+      ${icon('chevron')}
+    </a>
+  </div>`;
 }
 
 function shortcutsHtml(user) {
   const items = [
     { href: '#/scan', ic: 'scan', label: t('btn.scan'), cls: 'primary' },
+    { href: '#/suche', ic: 'search', label: t('nav.search') },
+    { href: '#/organisieren', ic: 'sparkle', label: t('nav.organize') },
     { href: '#/artikel', ic: 'box', label: t('nav.articles') },
     { href: '#/maschinen', ic: 'machine', label: t('nav.machines') },
     { href: '#/lagerorte', ic: 'location', label: t('nav.locations') },
     { href: '#/ausgeliehen', ic: 'handoff', label: t('nav.loans') },
     { href: '#/inventur', ic: 'clipboard', label: t('nav.inventory') },
+    { href: '#/kategorien', ic: 'layers', label: t('nav.categories') },
   ];
   if (can(user, 'staff')) items.push({ href: '#/mitarbeiter', ic: 'users', label: t('nav.employees') });
   return `<section class="section" aria-label="${esc(t('dashboard.shortcuts'))}"><h2>${esc(t('dashboard.shortcuts'))}</h2>
@@ -273,13 +423,13 @@ function lowStockHtml(articles) {
 
 function movementsHtml(movements) {
   const list = movements.slice(0, 8);
-  if (!list.length) return section(t('dashboard.movementsTitle'), noneCard(t('dashboard.movementsNone')));
+  if (!list.length) return section(t('dashboard.movementsTitle'), noneCard(t('dashboard.movementsNone')), '', 'dash-movements');
   return section(t('dashboard.movementsTitle'), `<div class="list">${list.map((m) => `
     <a class="list-item" href="${esc(href(m.article_code))}">
       <div class="li-main"><span class="li-title">${esc(m.article_name)}</span>
         <span class="li-sub">${esc(t('mv.' + m.type))} · ${esc(m.user_name || '–')} · ${esc(ago(m.created_at))}</span></div>
       <div class="li-end"><span class="pill ${Number(m.qty) < 0 ? 'pill-warn' : Number(m.qty) > 0 ? 'pill-ok' : 'pill-muted'}">${esc(signedQty(m.qty, m.unit))}</span></div>
-    </a>`).join('')}</div>`);
+    </a>`).join('')}</div>`, '', 'dash-movements');
 }
 
 function returnsHtml(returns) {
@@ -360,6 +510,9 @@ export const routes = {
     const head = `<div class="page-head"><div><h1>${esc(title)}</h1><div class="sub">${esc(t('dashboard.sub'))}</div></div></div>`;
     el.innerHTML = `<div class="page">${head}<p class="muted" role="status">${esc(t('common.loading'))}</p></div>`;
 
+    // Kennzahlen der Organisation laufen parallel; fehlen sie, bleibt die Übersicht nutzbar.
+    const orgP = Promise.resolve().then(() => api.orgStats())
+      .then((v) => ({ ok: true, v: v || null }), (err) => ({ ok: false, err }));
     let machines, articles, openLoans, returned, recentLoans, movements;
     try {
       [machines, articles, openLoans, returned, recentLoans, movements] = await Promise.all([
@@ -383,11 +536,17 @@ export const routes = {
     const returns = (returned || []).filter((l) => l.returned_at).sort((a, b) => ts(b.returned_at) - ts(a.returned_at));
     const mine = openLoans.filter((l) => user && l.borrower_id === user.id)
       .sort((a, b) => ts(a.checked_out_at) - ts(b.checked_out_at));
+    const orgRes = await orgP;
+    const org = orgRes.ok ? orgRes.v : null;
+    if (!orgRes.ok && !orgErrorShown) { orgErrorShown = true; toast(errorText(orgRes.err), 'error'); }
+    if (!el.isConnected) return;
 
     el.innerHTML = `<div class="page">
       ${head}
       ${myLoansHtml(mine)}
-      ${statsHtml({ machines, articles, openLoans })}
+      ${quickHtml(org)}
+      ${orgRes.ok ? '' : `<p class="small muted" role="status" style="margin:0">${esc(t('dashboard.orgStatsMissing'))}</p>`}
+      ${statsHtml({ machines, articles, openLoans, org })}
       ${shortcutsHtml(user)}
       <div class="grid-2">
         ${overdueHtml(openLoans)}
@@ -399,5 +558,19 @@ export const routes = {
       </div>
       ${activityHtml(activityEvents(recentLoans, returns, movements))}
     </div>`;
+
+    el.querySelector('[data-dash-search]').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const q = String(e.currentTarget.elements.q.value || '').trim();
+      ctx.go('suche' + (q ? '?q=' + encodeURIComponent(q) : ''));
+    });
+    el.querySelectorAll('[data-scroll]').forEach((b) => b.addEventListener('click', () => {
+      const target = document.getElementById(b.dataset.scroll);
+      if (!target) return;
+      // Sprung ohne Animation (zuverlässig, auch bei «weniger Bewegung»); Fokus für Tastatur/Screenreader auf den Titel
+      target.scrollIntoView({ block: 'start' });
+      const h = target.querySelector('h2[tabindex]');
+      if (h) h.focus({ preventScroll: true });
+    }));
   },
 };

@@ -10,6 +10,7 @@ import {
 } from '../util.js';
 import * as media from '../media.js';
 import * as labels from '../labels.js';
+import { LOCATION_TYPES, SPACE_PRESETS, suggestShortCode, normShortCode } from '../org-common.js';
 
 // ---------------------------------------------------------------------------
 // Texte
@@ -77,6 +78,22 @@ registerStrings({
     'locations.later': 'Später',
     'locations.qrAlt': 'QR-Code für {code}',
     'locations.photoAlt': 'Foto von {name}',
+    'locations.f.short': 'Kurzcode',
+    'locations.h.short': 'Nur A–Z und 0–9, höchstens 10 Zeichen, eindeutig auf dieser Ebene. Konvention: Raum, Regal, Fach, Box – z. B. HL-RG01-FA02-BX03.',
+    'locations.useSuggestion': 'Vorschlag {code} übernehmen',
+    'locations.codePathPreview': 'Lesbarer Code: {code}',
+    'locations.codePathMissing': 'Ein lesbarer Code entsteht erst, wenn dieser und alle übergeordneten Lagerorte einen Kurzcode haben.',
+    'locations.qrHintEdit': 'Der interne Code {code} steht im QR-Etikett und ändert sich nie. Der Kurzcode darf sich ändern – gedruckte Etiketten bleiben gültig.',
+    'locations.qrHintNew': 'Der interne Code (L-xxxx) steht im QR-Etikett und ändert sich nie. Der Kurzcode darf sich später ändern.',
+    'locations.shortDuplicate': 'Den Kurzcode «{code}» gibt es auf dieser Ebene bereits (bei «{name}»). Bitte einen anderen wählen, z. B. «{suggest}».',
+    'locations.shortDuplicateNoSug': 'Den Kurzcode «{code}» gibt es auf dieser Ebene bereits. Bitte einen anderen wählen.',
+    'locations.f.responsible': 'Verantwortlich',
+    'locations.noResponsible': '– niemand –',
+    'locations.codePath': 'Lesbarer Code',
+    'locations.internalCode': 'Interner Code (QR)',
+    'locations.codeExplain': 'Der interne Code steht im QR-Etikett und bleibt immer gleich. Der lesbare Code setzt sich aus den Kurzcodes aller Ebenen zusammen und darf sich ändern.',
+    'locations.openVisual': 'Visuell öffnen',
+    'locations.inventory': 'Inventur für diesen Ort',
   },
   pt: {
     'locations.title': 'Localizações',
@@ -140,6 +157,22 @@ registerStrings({
     'locations.later': 'Mais tarde',
     'locations.qrAlt': 'Código QR de {code}',
     'locations.photoAlt': 'Foto de {name}',
+    'locations.f.short': 'Código curto',
+    'locations.h.short': 'Só A–Z e 0–9, no máximo 10 caracteres, único neste nível. Convenção: divisão, estante, compartimento, caixa – p. ex. HL-RG01-FA02-BX03.',
+    'locations.useSuggestion': 'Usar a sugestão {code}',
+    'locations.codePathPreview': 'Código legível: {code}',
+    'locations.codePathMissing': 'O código legível só existe quando esta e todas as localizações superiores têm código curto.',
+    'locations.qrHintEdit': 'O código interno {code} está na etiqueta QR e nunca muda. O código curto pode mudar – as etiquetas impressas continuam válidas.',
+    'locations.qrHintNew': 'O código interno (L-xxxx) está na etiqueta QR e nunca muda. O código curto pode ser alterado mais tarde.',
+    'locations.shortDuplicate': 'O código curto «{code}» já existe neste nível (em «{name}»). Escolhe outro, p. ex. «{suggest}».',
+    'locations.shortDuplicateNoSug': 'O código curto «{code}» já existe neste nível. Escolhe outro.',
+    'locations.f.responsible': 'Responsável',
+    'locations.noResponsible': '– ninguém –',
+    'locations.codePath': 'Código legível',
+    'locations.internalCode': 'Código interno (QR)',
+    'locations.codeExplain': 'O código interno está na etiqueta QR e nunca muda. O código legível é composto pelos códigos curtos de todos os níveis e pode mudar.',
+    'locations.openVisual': 'Abrir visualmente',
+    'locations.inventory': 'Inventário deste local',
   },
   es: {
     'locations.title': 'Ubicaciones',
@@ -203,16 +236,40 @@ registerStrings({
     'locations.later': 'Más tarde',
     'locations.qrAlt': 'Código QR de {code}',
     'locations.photoAlt': 'Foto de {name}',
+    'locations.f.short': 'Código corto',
+    'locations.h.short': 'Solo A–Z y 0–9, máximo 10 caracteres, único en este nivel. Convención: sala, estantería, compartimento, caja – p. ej. HL-RG01-FA02-BX03.',
+    'locations.useSuggestion': 'Usar la sugerencia {code}',
+    'locations.codePathPreview': 'Código legible: {code}',
+    'locations.codePathMissing': 'El código legible solo existe cuando esta y todas las ubicaciones superiores tienen código corto.',
+    'locations.qrHintEdit': 'El código interno {code} está en la etiqueta QR y nunca cambia. El código corto puede cambiar: las etiquetas impresas siguen siendo válidas.',
+    'locations.qrHintNew': 'El código interno (L-xxxx) está en la etiqueta QR y nunca cambia. El código corto se puede cambiar más tarde.',
+    'locations.shortDuplicate': 'El código corto «{code}» ya existe en este nivel (en «{name}»). Elige otro, p. ej. «{suggest}».',
+    'locations.shortDuplicateNoSug': 'El código corto «{code}» ya existe en este nivel. Elige otro.',
+    'locations.f.responsible': 'Responsable',
+    'locations.noResponsible': '– nadie –',
+    'locations.codePath': 'Código legible',
+    'locations.internalCode': 'Código interno (QR)',
+    'locations.codeExplain': 'El código interno está en la etiqueta QR y nunca cambia. El código legible se compone de los códigos cortos de todos los niveles y puede cambiar.',
+    'locations.openVisual': 'Abrir en vista visual',
+    'locations.inventory': 'Inventario de este lugar',
   },
 });
 
 // ---------------------------------------------------------------------------
 // Konstanten und private Hilfen
 // ---------------------------------------------------------------------------
-const TYPES = ['lager', 'raum', 'regal', 'fach', 'box', 'behaelter', 'fahrzeug', 'temporaer'];
+const TYPES = LOCATION_TYPES;
 // Vorschlag für den Typ eines neuen Unterorts
-const NEXT_TYPE = { lager: 'regal', raum: 'regal', regal: 'fach', fach: 'box', box: 'box', behaelter: 'box', fahrzeug: 'box', temporaer: 'box' };
-const TYPE_ICON = { lager: 'home', raum: 'location', regal: 'list', fach: 'box', box: 'box', behaelter: 'box', fahrzeug: 'move', temporaer: 'clock' };
+const NEXT_TYPE = {
+  lager: 'regal', raum: 'regal', bereich: 'regal', regal: 'fach', schrank: 'tablar', tablar: 'box', fach: 'box',
+  schublade: 'box', box: 'box', behaelter: 'box', werkzeugwand: 'halterung', halterung: 'box', arbeitsplatz: 'schublade',
+  fahrzeug: 'box', container: 'regal', temporaer: 'box',
+};
+const TYPE_ICON = {
+  lager: 'home', raum: 'location', bereich: 'grid', regal: 'list', schrank: 'layers', tablar: 'list', fach: 'box',
+  schublade: 'box', box: 'box', behaelter: 'box', werkzeugwand: 'wrench', halterung: 'wrench', arbeitsplatz: 'tree',
+  fahrzeug: 'move', container: 'box', temporaer: 'clock',
+};
 const COLLAPSE_KEY = 'lgr-loc-collapsed';
 
 const enc = encodeURIComponent;
@@ -341,6 +398,15 @@ function countBy(list, key) {
   for (const x of list || []) if (x && x[key]) m.set(x[key], (m.get(x[key]) || 0) + 1);
   return m;
 }
+// Lesbarer Code (HL-RG01, aus den Kurzcodes) neben dem internen Code (L-0001, im QR)
+function codesHtml(l) {
+  return l.code_path
+    ? `<b class="mono" style="color:var(--text)">${esc(l.code_path)}</b> · <span class="mono">${esc(l.code)}</span>`
+    : `<span class="mono">${esc(l.code)}</span>`;
+}
+async function safeList(fn) {
+  try { const r = await fn(); return Array.isArray(r) ? r : []; } catch (e) { return []; }
+}
 function countsText(nA, nM) {
   const parts = [];
   if (nA) parts.push(plural('locations.articles', nA));
@@ -380,7 +446,8 @@ async function listView(ctx) {
   locs = locs || [];
   const directA = countBy(arts, 'location_id');
   const directM = countBy(machs, 'home_location_id');
-  const hay = new Map(locs.map((l) => [l.id, norm([l.name, l.code, l.path, locTypeLabel(l.type)].join(' '))]));
+  const hay = new Map(locs.map((l) => [l.id, norm([l.name, l.code, l.path, l.short_code, l.code_path, l.responsible_name,
+    locTypeLabel(l.type)].join(' '))]));
 
   ctx.el.innerHTML = `<div class="page">
     <div class="page-head">
@@ -415,7 +482,7 @@ async function listView(ctx) {
       ${toggle}
       <a class="li-main" href="#/l/${enc(l.code)}" style="text-decoration:none;align-self:stretch;justify-content:center">
         <span class="li-title"><span class="muted" aria-hidden="true" style="display:inline-flex;vertical-align:-4px;margin-right:6px">${typeIcon(l.type)}</span>${esc(l.name)}</span>
-        <span class="li-sub">${esc(locTypeLabel(l.type))} · <span class="mono">${esc(l.code)}</span>${l.archived ? ' · ' + esc(t('common.archived')) : ''}</span>
+        <span class="li-sub">${esc(locTypeLabel(l.type))} · ${codesHtml(l)}${l.archived ? ' · ' + esc(t('common.archived')) : ''}</span>
       </a>
       <div class="li-end">
         ${nA ? `<span>${esc(plural('locations.articles', nA))}</span>` : ''}
@@ -603,7 +670,7 @@ async function cardView(ctx) {
   const childRow = (c) => {
     const { nA, nM } = subtotal(c.id);
     const nSub = (tree.kids.get(c.id) || []).filter((x) => !x.archived).length;
-    const info = [locTypeLabel(c.type), c.code, nSub ? plural('locations.subs', nSub) : '', countsText(nA, nM)].filter(Boolean).join(' · ');
+    const info = [locTypeLabel(c.type), c.code_path, c.code, nSub ? plural('locations.subs', nSub) : '', countsText(nA, nM)].filter(Boolean).join(' · ');
     return `<a class="list-item" href="#/l/${enc(c.code)}">
       <div class="thumb thumb-empty" aria-hidden="true">${typeIcon(c.type)}</div>
       <div class="li-main">
@@ -631,15 +698,25 @@ async function cardView(ctx) {
         <div data-hero>${hero}</div>
         <div>
           <h1>${esc(loc.name)}</h1>
-          <div class="code"><span>${esc(locTypeLabel(loc.type))}</span> · <span class="mono">${esc(loc.code)}</span></div>
+          <div class="code"><span>${esc(locTypeLabel(loc.type))}</span> · ${codesHtml(loc)}</div>
           <div class="row">
             ${loc.archived ? `<span class="pill pill-muted">${esc(t('common.archived'))}</span>` : ''}
             ${countsText(articles.length, machines.length) ? `<span class="small muted">${esc(countsText(articles.length, machines.length))}</span>` : ''}
           </div>
         </div>
       </div>
+      <dl class="kv">
+        ${loc.code_path ? `<dt>${esc(t('locations.codePath'))}</dt><dd class="mono">${esc(loc.code_path)}</dd>` : ''}
+        <dt>${esc(t('locations.internalCode'))}</dt><dd class="mono">${esc(loc.code)}</dd>
+        ${loc.responsible_name ? `<dt>${esc(t('locations.f.responsible'))}</dt><dd>${esc(loc.responsible_name)}</dd>` : ''}
+      </dl>
+      ${loc.code_path ? `<p class="hint" style="margin:0">${esc(t('locations.codeExplain'))}</p>` : ''}
       ${loc.notes ? `<div style="white-space:pre-line;overflow-wrap:anywhere">${esc(loc.notes)}</div>` : ''}
       ${loc.archived ? `<div class="alert">${icon('box')}<span>${esc(t('locations.archivedNote'))}</span></div>` : ''}
+      <div class="row">
+        <a class="btn" href="#/o/${enc(loc.code)}">${icon('image')}${esc(t('locations.openVisual'))}</a>
+        ${staff && !loc.archived ? `<a class="btn" href="#/inventur?ort=${enc(loc.code)}">${icon('clipboard')}${esc(t('locations.inventory'))}</a>` : ''}
+      </div>
     </div>
 
     ${staff ? `<section class="section" aria-labelledby="loc-manage-h">
@@ -746,10 +823,12 @@ async function formView(ctx, mode) {
   ctx.el.innerHTML = loadingHtml();
   let loc = null;
   let all = [];
+  let profiles = [];
   try {
-    [loc, all] = await Promise.all([
+    [loc, all, profiles] = await Promise.all([
       isNew ? Promise.resolve(null) : api.getLocationByCode(code),
       api.listLocations({ includeArchived: true }),
+      safeList(() => api.listProfiles()),
     ]);
   } catch (err) { showError(ctx, err); return; }
   if (!isNew && !loc) { showNotFound(ctx, code); return; }
@@ -773,6 +852,23 @@ async function formView(ctx, mode) {
     .sort((x, y) => cmp(x.path || x.name, y.path || y.name));
   const pathOf = (l) => l.path || [...ancestors(l, tree).map((p) => p.name), l.name].join(' / ');
   const back = isNew ? (parent ? `#/l/${enc(parent.code)}` : '#/lagerorte') : `#/l/${enc(loc.code)}`;
+  // Kurzcode: Geschwister = gleicher übergeordneter Lagerort (eindeutig je Ebene)
+  const siblings = (pid) => all.filter((l) => (l.parent_id || null) === (pid || null) && (!loc || l.id !== loc.id));
+  const suggestFor = (ty, pid, name) => {
+    const sib = siblings(pid);
+    let s = suggestShortCode(ty, sib);
+    if (!s && !pid) {   // Raum (oberste Ebene): bekannte Vorschläge wie «Hauptlager» → HL
+      const p = SPACE_PRESETS.find((x) => norm(x.name) === norm(name));
+      if (p && !sib.some((l) => l.short_code === p.short)) s = p.short;
+    }
+    return s;
+  };
+  const respId = loc && loc.responsible_id ? loc.responsible_id : '';
+  const people = profiles.filter((p) => p.active !== false || p.id === respId);
+  const respOpts = `<option value="">${esc(t('locations.noResponsible'))}</option>`
+    + (respId && !people.some((p) => p.id === respId) ? `<option value="${esc(respId)}" selected>${esc(loc.responsible_name || '?')}</option>` : '')
+    + people.map((p) => `<option value="${esc(p.id)}"${p.id === respId ? ' selected' : ''}>${esc(p.full_name || p.email || '–')}</option>`).join('');
+  const initialShort = loc ? (loc.short_code || '') : suggestFor(type, parentId, '');
 
   ctx.el.innerHTML = `<div class="page">
     <a class="back-link" href="${back}">${icon('back')}${esc(t('btn.back'))}</a>
@@ -794,6 +890,19 @@ async function formView(ctx, mode) {
           placeholder="L-…" aria-describedby="lf-code-h">
         <div class="hint" id="lf-code-h">${esc(t('locations.h.code'))}</div>
       </div>` : ''}
+      <div class="field">
+        <label for="lf-short">${esc(t('locations.f.short'))} (${esc(t('common.optional'))})</label>
+        <input id="lf-short" name="short_code" type="text" maxlength="10" autocomplete="off" autocapitalize="characters" spellcheck="false"
+          value="${esc(initialShort)}" style="text-transform:uppercase;font-family:var(--mono, ui-monospace, monospace)" aria-describedby="lf-short-h lf-codepath">
+        <div><button type="button" class="btn sm ghost" data-suggest hidden></button></div>
+        <div class="hint" id="lf-short-h">${esc(t('locations.h.short'))}</div>
+        <div class="hint" id="lf-codepath" data-codepath aria-live="polite"></div>
+      </div>
+      <div class="field">
+        <label for="lf-resp">${esc(t('locations.f.responsible'))}</label>
+        <select id="lf-resp" name="responsible_id">${respOpts}</select>
+      </div>
+      <p class="hint" style="grid-column:1/-1;margin:0">${esc(loc ? t('locations.qrHintEdit', { code: loc.code }) : t('locations.qrHintNew'))}</p>
       <div class="field full">
         <label for="lf-parent">${esc(t('locations.f.parent'))}</label>
         <select id="lf-parent" name="parent_id" aria-describedby="lf-parent-h lf-preview">
@@ -821,20 +930,58 @@ async function formView(ctx, mode) {
   const parentSel = form.querySelector('#lf-parent');
   const typeSel = form.querySelector('#lf-type');
   const preview = form.querySelector('[data-preview]');
+  const shortInp = form.querySelector('#lf-short');
+  const suggestBtn = form.querySelector('[data-suggest]');
+  const codePathEl = form.querySelector('[data-codepath]');
   let typeTouched = !isNew;
-  typeSel.addEventListener('change', () => { typeTouched = true; });
+  // Neuanlage: Kurzcode automatisch vorschlagen, bis jemand das Feld selbst ändert.
+  // Bearbeiten: nie automatisch ändern – nur der Knopf «Vorschlag … übernehmen».
+  let shortEdited = !isNew;
+  let suggestion = '';
+  const updateShort = () => {
+    const pid = parentSel.value || null;
+    suggestion = suggestFor(typeSel.value, pid, nameInp.value);
+    if (!shortEdited && normShortCode(shortInp.value) !== suggestion) shortInp.value = suggestion;
+    const now = normShortCode(shortInp.value);
+    suggestBtn.hidden = !suggestion || suggestion === now;
+    suggestBtn.textContent = suggestion ? t('locations.useSuggestion', { code: suggestion }) : '';
+    // Lesbarer Code = Code des übergeordneten Lagerorts + Kurzcode
+    const p = pid ? tree.byId.get(pid) : null;
+    const full = !now ? '' : !p ? now : p.code_path ? `${p.code_path}-${now}` : '';
+    codePathEl.textContent = full ? t('locations.codePathPreview', { code: full }) : t('locations.codePathMissing');
+  };
+  typeSel.addEventListener('change', () => { typeTouched = true; updateShort(); });
+  shortInp.addEventListener('input', () => { shortEdited = true; shortInp.removeAttribute('aria-invalid'); updateShort(); });
+  shortInp.addEventListener('blur', () => { shortInp.value = normShortCode(shortInp.value); updateShort(); });
+  suggestBtn.addEventListener('click', () => {
+    if (!suggestion) return;
+    shortInp.value = suggestion;
+    shortInp.removeAttribute('aria-invalid');
+    updateShort();
+    shortInp.focus();
+  });
   const updatePreview = () => {
     const p = parentSel.value ? tree.byId.get(parentSel.value) : null;
     const name = clean(nameInp.value) || '…';
     preview.textContent = t('locations.preview', { path: p ? `${pathOf(p)} / ${name}` : name });
   };
-  nameInp.addEventListener('input', updatePreview);
+  nameInp.addEventListener('input', () => { updatePreview(); if (!parentSel.value) updateShort(); });
   parentSel.addEventListener('change', () => {
     const p = parentSel.value ? tree.byId.get(parentSel.value) : null;
     if (!typeTouched) typeSel.value = p ? (NEXT_TYPE[p.type] || 'box') : 'lager';
     updatePreview();
+    updateShort();
   });
   updatePreview();
+  updateShort();
+  // Fehlermeldung bei doppeltem Kurzcode auf derselben Ebene (mit Vorschlag)
+  const duplicateMsg = (short, pid) => {
+    const other = siblings(pid).find((l) => l.short_code === short);
+    const sug = suggestFor(typeSel.value, pid, nameInp.value);
+    return other && sug && sug !== short
+      ? t('locations.shortDuplicate', { code: short, name: other.name, suggest: sug })
+      : t('locations.shortDuplicateNoSug', { code: short });
+  };
 
   const fail = (msg, fieldName) => {
     setErr(form, msg);
@@ -850,7 +997,16 @@ async function formView(ctx, mode) {
     const d = formData(form);
     const name = clean(d.name);
     if (!name) { fail(t('err.name_required'), 'name'); return; }
-    const obj = { name, type: TYPES.includes(d.type) ? d.type : 'lager', parent_id: d.parent_id || null, notes: multi(d.notes) };
+    const short = normShortCode(d.short_code);
+    shortInp.value = short;
+    const obj = {
+      name, type: TYPES.includes(d.type) ? d.type : 'lager', parent_id: d.parent_id || null, notes: multi(d.notes),
+      short_code: short || null, responsible_id: d.responsible_id || null,
+    };
+    if (short && siblings(obj.parent_id).some((l) => l.short_code === short)) {
+      fail(duplicateMsg(short, obj.parent_id), 'short_code');
+      return;
+    }
     if (isNew) {
       const c = clean(d.code).toUpperCase().replace(/\s+/g, '');
       if (c) obj.code = c;
@@ -868,10 +1024,14 @@ async function formView(ctx, mode) {
       if (savedCode) ctx.go('l/' + enc(savedCode)); else ctx.go('lagerorte');
       if (isNew && row) offerLabel(row);
     } catch (err) {
-      const msg = errorText(err);
       const c = err && err.code;
-      fail(msg, (c === 'duplicate_code' || c === 'invalid_code') && isNew ? 'code'
-        : (c === 'location_cycle' || c === 'invalid_location') ? 'parent_id' : (c === 'name_required' ? 'name' : null));
+      // Gleicher Kurzcode auf derselben Ebene (eindeutiger Index locations_short_code_uniq)
+      const shortDup = obj.short_code && (c === 'duplicate_short_code' || c === 'duplicate'
+        || (c === 'duplicate_code' && /short/i.test(String(err.detail || ''))));
+      const msg = shortDup ? duplicateMsg(obj.short_code, obj.parent_id) : errorText(err);
+      fail(msg, shortDup ? 'short_code'
+        : (c === 'duplicate_code' || c === 'invalid_code') && isNew ? 'code'
+          : (c === 'location_cycle' || c === 'invalid_location') ? 'parent_id' : (c === 'name_required' ? 'name' : null));
       toast(msg, 'error');
     } finally {
       busy = false;

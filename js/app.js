@@ -3,8 +3,9 @@ import { api } from './api.js';
 import { t, initLang, setLang, getLang, LANGS } from './i18n.js';
 import { esc, icon, toast, errorText, can, routeForCode, parseScanned, sheet } from './util.js';
 import { openScanner } from './scanner.js';
+import './theme.js';
 
-const VIEW_MODULES = ['dashboard', 'machines', 'articles', 'locations', 'inventory', 'employees', 'audit', 'labels-page', 'profile'];
+const VIEW_MODULES = ['dashboard', 'organize', 'organize-review', 'search', 'categories', 'machines', 'articles', 'locations', 'inventory', 'employees', 'audit', 'labels-page', 'profile'];
 const routes = [];
 let me = null;                // eigenes Profil
 let recoveryMode = false;     // Passwort-Zurücksetzen über E-Mail-Link
@@ -87,11 +88,14 @@ function navItems() {
   return [
     { path: '', ic: 'home', label: t('nav.home') },
     { path: 'scan', ic: 'scan', label: t('nav.scan'), scan: true },
+    { path: 'suche', ic: 'search', label: t('nav.search') },
+    { path: 'organisieren', ic: 'sparkle', label: t('nav.organize') },
     { path: 'maschinen', ic: 'machine', label: t('nav.machines') },
     { path: 'ausgeliehen', ic: 'handoff', label: t('nav.loans') },
     { path: 'artikel', ic: 'box', label: t('nav.articles') },
     { path: 'lagerorte', ic: 'location', label: t('nav.locations') },
     { path: 'inventur', ic: 'clipboard', label: t('nav.inventory') },
+    { path: 'kategorien', ic: 'layers', label: t('nav.categories') },
     { path: 'mitarbeiter', ic: 'users', label: t('nav.employees') },
     staff && { path: 'etiketten', ic: 'label', label: t('nav.labels') },
     staff && { path: 'protokoll', ic: 'history', label: t('nav.audit') },
@@ -103,6 +107,7 @@ function sectionOf(path) {
   if (first === 'm' || first === 'maschinen') return 'maschinen';
   if (first === 'a' || first === 'artikel') return 'artikel';
   if (first === 'l' || first === 'lagerorte') return 'lagerorte';
+  if (first === 'o' || first === 'organisieren') return 'organisieren';
   return first;
 }
 function initials(name) {
@@ -121,6 +126,7 @@ function renderShell() {
         <a class="brand" href="#/" aria-label="${esc(t('nav.home'))}"><span class="brand-mark">${icon('box')}</span></a>
         <div class="title" id="pageTitle"></div>
         <div class="top-actions">
+          <a class="icon-btn" href="#/suche" aria-label="${esc(t('nav.search'))}" title="${esc(t('nav.search'))}">${icon('search')}</a>
           <a class="icon-btn" href="#/scan" aria-label="${esc(t('nav.scan'))}" title="${esc(t('nav.scan'))}">${icon('scan')}</a>
           <a class="avatar" href="#/profil" title="${esc(me.full_name)}" aria-label="${esc(t('nav.profile'))}">${esc(initials(me.full_name))}</a>
         </div>

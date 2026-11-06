@@ -28,6 +28,10 @@ export const API_METHODS = Object.freeze([
   'listAttachments', 'uploadAttachment', 'deleteAttachment', 'setPrimaryAttachment', 'fileUrls',
   'listInventories', 'createInventory', 'getInventory', 'countArticle', 'checkMachine', 'closeInventory',
   'listAudit',
+  'listCategories', 'saveCategory', 'deleteCategory', 'listSpaces', 'orgStats', 'setLocationOrganized',
+  'listPhotos', 'importPhoto', 'setPhotoStatus', 'movePhoto', 'deletePhoto', 'importAnalysis',
+  'listDetections', 'reviewDetection', 'addDetection', 'listTasks', 'saveTask',
+  'listHotspots', 'saveHotspot', 'deleteHotspot', 'listComponents', 'saveComponent', 'deleteComponent',
 ]);
 
 export const SUPABASE_CONFIGURED = Boolean(String(SUPABASE_URL || '').trim() && String(SUPABASE_ANON_KEY || '').trim());

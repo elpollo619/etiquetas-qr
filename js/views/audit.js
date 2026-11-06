@@ -182,7 +182,48 @@ registerStrings({
 });
 
 // ---------- private Hilfen ----------
-const AREAS = ['machines', 'articles', 'locations', 'loans', 'profiles', 'inventories', 'attachments'];
+// «Lager organisieren»: Aktionen, Bereiche und Felder der neuen Tabellen
+registerStrings({
+  de: {
+    'audit.a.ki_import': 'KI-Ergebnis importiert', 'audit.a.ki_bearbeitet': 'Erkennung bearbeitet', 'audit.a.ki_bestaetigen': 'Erkennung bestätigt',
+    'audit.a.ki_spaeter': 'Erkennung später prüfen', 'audit.a.ki_ablehnen': 'Erkennung abgelehnt', 'audit.a.ki_wiederoeffnen': 'Erkennung wieder geöffnet',
+    'audit.a.ki_zusammenfuehren': 'Erkennungen zusammengeführt', 'audit.a.organisiert': 'Organisationsstatus',
+    'audit.e.categories': 'Kategorien', 'audit.e.photos': 'Fotos (Import)', 'audit.e.detections': 'KI-Erkennungen',
+    'audit.e.org_tasks': 'Organisationsaufgaben', 'audit.e.photo_hotspots': 'Bereiche auf Fotos', 'audit.e.set_components': 'Set-Komponenten',
+    'audit.f.short_code': 'Kurzcode', 'audit.f.responsible_id': 'Verantwortlich', 'audit.f.cover_photo_id': 'Übersichtsfoto',
+    'audit.f.category_id': 'Kategorie', 'audit.f.is_set': 'Set', 'audit.f.product_url': 'Herstellerseite', 'audit.f.title': 'Titel',
+    'audit.f.details': 'Details', 'audit.f.assigned_to': 'Zugewiesen an', 'audit.f.sort': 'Reihenfolge', 'audit.f.label': 'Beschriftung',
+    'audit.f.qty': 'Menge', 'audit.f.organisiert': 'Organisiert', 'audit.f.quelle': 'Quelle', 'audit.f.datei': 'Datei',
+    'audit.f.neue_objekte': 'Neue Objekte', 'audit.f.erfasst': 'Erfasst als', 'audit.f.codes': 'Codes', 'audit.f.verknuepft': 'Verknüpft',
+  },
+  pt: {
+    'audit.a.ki_import': 'Resultado IA importado', 'audit.a.ki_bearbeitet': 'Deteção editada', 'audit.a.ki_bestaetigen': 'Deteção confirmada',
+    'audit.a.ki_spaeter': 'Deteção para mais tarde', 'audit.a.ki_ablehnen': 'Deteção rejeitada', 'audit.a.ki_wiederoeffnen': 'Deteção reaberta',
+    'audit.a.ki_zusammenfuehren': 'Deteções fundidas', 'audit.a.organisiert': 'Estado de organização',
+    'audit.e.categories': 'Categorias', 'audit.e.photos': 'Fotos (importação)', 'audit.e.detections': 'Deteções IA',
+    'audit.e.org_tasks': 'Tarefas de organização', 'audit.e.photo_hotspots': 'Áreas nas fotos', 'audit.e.set_components': 'Componentes de conjunto',
+    'audit.f.short_code': 'Código curto', 'audit.f.responsible_id': 'Responsável', 'audit.f.cover_photo_id': 'Foto geral',
+    'audit.f.category_id': 'Categoria', 'audit.f.is_set': 'Conjunto', 'audit.f.product_url': 'Página do fabricante', 'audit.f.title': 'Título',
+    'audit.f.details': 'Detalhes', 'audit.f.assigned_to': 'Atribuída a', 'audit.f.sort': 'Ordem', 'audit.f.label': 'Rótulo',
+    'audit.f.qty': 'Quantidade', 'audit.f.organisiert': 'Organizado', 'audit.f.quelle': 'Fonte', 'audit.f.datei': 'Ficheiro',
+    'audit.f.neue_objekte': 'Objetos novos', 'audit.f.erfasst': 'Registado como', 'audit.f.codes': 'Códigos', 'audit.f.verknuepft': 'Ligados',
+  },
+  es: {
+    'audit.a.ki_import': 'Resultado de IA importado', 'audit.a.ki_bearbeitet': 'Detección editada', 'audit.a.ki_bestaetigen': 'Detección confirmada',
+    'audit.a.ki_spaeter': 'Detección para más tarde', 'audit.a.ki_ablehnen': 'Detección rechazada', 'audit.a.ki_wiederoeffnen': 'Detección reabierta',
+    'audit.a.ki_zusammenfuehren': 'Detecciones fusionadas', 'audit.a.organisiert': 'Estado de organización',
+    'audit.e.categories': 'Categorías', 'audit.e.photos': 'Fotos (importación)', 'audit.e.detections': 'Detecciones IA',
+    'audit.e.org_tasks': 'Tareas de organización', 'audit.e.photo_hotspots': 'Áreas en fotos', 'audit.e.set_components': 'Componentes de set',
+    'audit.f.short_code': 'Código corto', 'audit.f.responsible_id': 'Responsable', 'audit.f.cover_photo_id': 'Foto general',
+    'audit.f.category_id': 'Categoría', 'audit.f.is_set': 'Set', 'audit.f.product_url': 'Página del fabricante', 'audit.f.title': 'Título',
+    'audit.f.details': 'Detalles', 'audit.f.assigned_to': 'Asignada a', 'audit.f.sort': 'Orden', 'audit.f.label': 'Etiqueta',
+    'audit.f.qty': 'Cantidad', 'audit.f.organisiert': 'Organizado', 'audit.f.quelle': 'Fuente', 'audit.f.datei': 'Archivo',
+    'audit.f.neue_objekte': 'Objetos nuevos', 'audit.f.erfasst': 'Registrado como', 'audit.f.codes': 'Códigos', 'audit.f.verknuepft': 'Vinculados',
+  },
+});
+
+const AREAS = ['machines', 'articles', 'locations', 'loans', 'profiles', 'inventories', 'attachments',
+  'categories', 'photos', 'detections', 'org_tasks', 'photo_hotspots', 'set_components'];
 const ACTION_PILL = {
   insert: 'pill-ok', update: 'pill-info', delete: 'pill-danger', ausleihen: 'pill-ausgeliehen', zurueckgeben: 'pill-verfuegbar',
   status: 'pill-warn', korrektur: 'pill-warn', mitarbeiter: 'pill-reserviert', inventur: 'pill-info',
@@ -190,7 +231,8 @@ const ACTION_PILL = {
 const SKIP_FIELDS = new Set(['id', 'updated_at', 'created_at', 'created_by', 'uploaded_by', 'started_by', 'path', 'mime',
   'size_bytes', 'entity', 'entity_id', 'loan_id', 'request_id', 'checkout_request', 'return_request']);
 const INSERT_FIELDS = ['category', 'brand', 'model', 'type', 'stock', 'min_stock', 'location_id', 'home_location_id', 'parent_id', 'status'];
-const LOC_FIELDS = new Set(['location_id', 'home_location_id', 'parent_id']);
+const LOC_FIELDS = new Set(['location_id', 'home_location_id', 'parent_id', 'target_location_id']);
+const PERSON_FIELDS = new Set(['responsible_id', 'assigned_to', 'done_by', 'organized_by', 'reviewed_by']);
 const norm = (s) => String(s ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 const isIsoDate = (v) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(v);
 
@@ -208,6 +250,7 @@ function makeFmt(maps, entity, unit) {
     if (v === null || v === undefined || v === '') return '–';
     if (typeof v === 'boolean') return v ? t('common.yes') : t('common.no');
     if (LOC_FIELDS.has(key)) return maps.locations.get(v) || short(v, 10);
+    if (PERSON_FIELDS.has(key)) return maps.profiles.get(v) || short(v, 10);
     if (key === 'status' && has('status.' + v)) return t('status.' + v);
     if ((key === 'condition' || key === 'return_condition') && has('cond.' + v)) return conditionLabel(v);
     if ((key === 'rolle' || key === 'role') && has('role.' + v)) return roleLabel(v);
@@ -250,6 +293,12 @@ function objectInfo(row, maps) {
     };
   }
   if (e === 'loans') return { label: t('audit.d.loan'), href: '' };
+  if (e === 'categories') return { label: (typeof d.name === 'string' ? d.name : (d.name && typeof d.name.neu === 'string' ? d.name.neu : '')), href: id ? '#/suche?kat=' + encodeURIComponent(id) : '' };
+  if (e === 'photos') return { label: (typeof d.datei === 'string' ? d.datei : (d.datei && typeof d.datei.neu === 'string' ? d.datei.neu : '')) || (typeof d.file_name === 'string' ? d.file_name : (d.file_name && typeof d.file_name.neu === 'string' ? d.file_name.neu : '')), href: '' };
+  if (e === 'detections') return { label: (typeof d.name === 'string' ? d.name : (d.name && typeof d.name.neu === 'string' ? d.name.neu : '')), href: '#/organisieren/pruefen' };
+  if (e === 'org_tasks') return { label: (typeof d.title === 'string' ? d.title : (d.title && typeof d.title.neu === 'string' ? d.title.neu : '')), href: '' };
+  if (e === 'photo_hotspots') return { label: (typeof d.label === 'string' ? d.label : (d.label && typeof d.label.neu === 'string' ? d.label.neu : '')), href: '' };
+  if (e === 'set_components') return { label: (typeof d.name === 'string' ? d.name : (d.name && typeof d.name.neu === 'string' ? d.name.neu : '')), href: '' };
   return { label: '', href: '' };
 }
 

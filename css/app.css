@@ -25,8 +25,13 @@
   --bottomnav-h: 64px;
   --safe-b: env(safe-area-inset-bottom, 0px);
 }
+/* ---------- Dunkel-Modus ----------
+   System (prefers-color-scheme), ausser der Benutzer hat «Hell» gewählt; oder fest «Dunkel» über js/theme.js
+   (<html data-theme="light"|"dark">). Kontrast WCAG AA geprüft: Text ≥ 4.5:1 auf allen Flächen/Hinweisfarben. */
+:root { color-scheme: light; }
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
     --bg: #121211; --surface: #1b1b19; --surface-2: #222220; --surface-3: #2a2a27;
     --border: #33322e; --border-strong: #4a4843; --text: #eeede8; --muted: #a3a097;
     --primary: #f2f1ec; --primary-ink: #121211; --accent: #74b4e6; --accent-soft: #1b2b38;
@@ -35,7 +40,24 @@
     --violet: #c1adf5; --violet-bg: #2a2340; --gray: #cfcdc5; --gray-bg: #2c2b28;
     --shadow: 0 0 0 1px rgba(255,255,255,.04);
   }
+  /* helle Rot-/Grüntöne brauchen dunkle Schrift (weiss darauf wäre nur ~2:1) */
+  :root:not([data-theme="light"]) .btn.danger,
+  :root:not([data-theme="light"]) .btn.ok,
+  :root:not([data-theme="light"]) .toast-error { color: #121211; }
 }
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #121211; --surface: #1b1b19; --surface-2: #222220; --surface-3: #2a2a27;
+  --border: #33322e; --border-strong: #4a4843; --text: #eeede8; --muted: #a3a097;
+  --primary: #f2f1ec; --primary-ink: #121211; --accent: #74b4e6; --accent-soft: #1b2b38;
+  --ok: #7ccf9c; --ok-bg: #16291e; --info: #8cc2ea; --info-bg: #182633;
+  --warn: #f1cf79; --warn-bg: #352a10; --danger: #ff9a88; --danger-bg: #3a1a15;
+  --violet: #c1adf5; --violet-bg: #2a2340; --gray: #cfcdc5; --gray-bg: #2c2b28;
+  --shadow: 0 0 0 1px rgba(255,255,255,.04);
+}
+:root[data-theme="dark"] .btn.danger,
+:root[data-theme="dark"] .btn.ok,
+:root[data-theme="dark"] .toast-error { color: #121211; }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 html, body { margin: 0; padding: 0; }

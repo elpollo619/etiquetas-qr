@@ -31,20 +31,24 @@ const AUDIT_TABLE = {
 const AUTH_EVENTS = new Set(['SIGNED_IN', 'SIGNED_OUT', 'PASSWORD_RECOVERY', 'USER_UPDATED']);
 
 // Spalten, die geschrieben werden dürfen (siehe GRANTs in schema.sql). Bestand und Status nie per Update.
-const LOCATION_INSERT = ['code', 'name', 'type', 'parent_id', 'notes', 'archived'];
-const LOCATION_UPDATE = ['name', 'type', 'parent_id', 'notes', 'archived'];
+const LOCATION_INSERT = ['code', 'name', 'type', 'parent_id', 'notes', 'archived', 'short_code', 'responsible_id', 'cover_photo_id'];
+const LOCATION_UPDATE = ['name', 'type', 'parent_id', 'notes', 'archived', 'short_code', 'responsible_id', 'cover_photo_id'];
 const ARTICLE_INSERT = ['code', 'name', 'description', 'art_no', 'category', 'brand', 'model', 'size', 'color', 'usage',
-  'label_text', 'unit', 'stock', 'min_stock', 'location_id', 'notes', 'archived'];
+  'label_text', 'unit', 'stock', 'min_stock', 'location_id', 'notes', 'archived', 'category_id', 'product_url'];
 const ARTICLE_UPDATE = ['name', 'description', 'art_no', 'category', 'brand', 'model', 'size', 'color', 'usage',
-  'label_text', 'unit', 'min_stock', 'location_id', 'notes', 'archived'];
+  'label_text', 'unit', 'min_stock', 'location_id', 'notes', 'archived', 'category_id', 'product_url'];
 const MACHINE_INSERT = ['code', 'name', 'category', 'brand', 'model', 'serial_no', 'inventory_no', 'home_location_id',
-  'status', 'condition', 'condition_note', 'notes', 'archived'];
+  'status', 'condition', 'condition_note', 'notes', 'archived', 'category_id', 'responsible_id', 'is_set', 'product_url'];
 const MACHINE_UPDATE = ['name', 'category', 'brand', 'model', 'serial_no', 'inventory_no', 'home_location_id',
-  'condition', 'condition_note', 'notes', 'archived'];
+  'condition', 'condition_note', 'notes', 'archived', 'category_id', 'responsible_id', 'is_set', 'product_url'];
 
-const REF_COLS = new Set(['parent_id', 'location_id', 'home_location_id']);
+const REF_COLS = new Set(['parent_id', 'location_id', 'home_location_id', 'category_id', 'responsible_id', 'cover_photo_id']);
 const NUM_COLS = new Set(['stock', 'min_stock']);
-const BOOL_COLS = new Set(['archived']);
+const BOOL_COLS = new Set(['archived', 'is_set']);
+const URL_RE = /^https?:\/\/[^\s]+$/i;
+const IMAGE_MIME = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/heic', 'image/heif'];
+const PHOTO_STATUS = ['neu', 'in_analyse'];
+const ANALYSIS_CHUNK_MAX = 250;
 const ENUM_COLS = new Set(['type', 'unit', 'status', 'condition']);
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -141,6 +145,51 @@ async function resizeImage(file, maxPx, quality) {
   }
 }
 
+// Kategorien in Baumreihenfolge (Eltern vor Kindern, je Ebene nach sort, Name)
+function treeOrder(rows) {
+  const kids = new Map();
+  for (const r of rows) {
+    const k = r.parent_id || null;
+    if (!kids.has(k)) kids.set(k, []);
+    kids.get(k).push(r);
+  }
+  for (const list of kids.values()) list.sort((a, b) => ((a.sort || 0) - (b.sort || 0)) || cmp(a.name, b.name));
+  const ids = new Set(rows.map((r) => r.id));
+  const out = [];
+  const seen = new Set();
+  const walk = (parent) => {
+    for (const r of kids.get(parent) || []) {
+      if (seen.has(r.id)) continue;
+      seen.add(r.id);
+      out.push(r);
+      walk(r.id);
+    }
+  };
+  walk(null);
+  // Kinder archivierter (ausgeblendeter) Eltern trotzdem zeigen
+  for (const r of rows) if (!seen.has(r.id) && (!r.parent_id || !ids.has(r.parent_id))) { seen.add(r.id); out.push(r); walk(r.id); }
+  return out;
+}
+function guessImageMime(name) {
+  const e = /\.([a-z0-9]+)$/i.exec(String(name || ''));
+  return { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif',
+    heic: 'image/heic', heif: 'image/heif' }[e ? e[1].toLowerCase() : ''] || '';
+}
+// SHA-256 der Originaldatei (identifiziert ein Foto: Doppelimport, Zuordnung des KI-Ergebnisses)
+async function sha256Of(blob) {
+  const hash = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer());
+  return [...new Uint8Array(hash)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+async function imageSize(blob) {
+  if (typeof createImageBitmap !== 'function') return null;
+  try {
+    const bmp = await createImageBitmap(blob);
+    const out = { w: bmp.width, h: bmp.height };
+    try { bmp.close && bmp.close(); } catch { /* egal */ }
+    return out;
+  } catch { return null; }
+}
+
 // ---------------------------------------------------------------------------------------------
 //  Fabrik
 // ---------------------------------------------------------------------------------------------
@@ -221,18 +270,24 @@ export function createApi({ LgrError, client } = {}) {
         const cn = constraintName(msg);
         if (/_code_key$/.test(cn) || /\(code\)/.test(details)) return E('duplicate_code');
         if (/one_open_per_machine/.test(cn)) return E('not_available', 'ausgeliehen');
+        if (/short_code/.test(cn)) return E('duplicate_short_code');
+        if (/categories_name/.test(cn)) return E('duplicate', 'category');
         return E('duplicate', cn || null);
       }
       case '23503': {
         if (/update or delete on table/i.test(msg)) return E('in_use');
         const cn = constraintName(msg);
+        if (/responsible|cover_photo|category/.test(cn)) return E('not_found');
         if (/location|parent/.test(cn)) return E('invalid_location');
         if (/borrower/.test(cn)) return E('invalid_borrower');
         return E('not_found');
       }
       case '23514': {
         const cn = constraintName(msg);
-        if (/name/.test(cn)) return E('name_required');
+        if (/short_code/.test(cn)) return E('invalid_short_code');
+        if (/product_url/.test(cn)) return E('invalid_url');
+        if (/set_components_(target|self)/.test(cn)) return E('invalid_input');
+        if (/name|title/.test(cn)) return E('name_required');
         if (/stock|qty|counted/.test(cn)) return E('invalid_qty');
         if (/dates/.test(cn)) return E('invalid_dates');
         if (/condition/.test(cn)) return E('invalid_condition');
@@ -327,6 +382,8 @@ export function createApi({ LgrError, client } = {}) {
       if (!has(obj, k)) continue;
       let v = obj[k];
       if (k === 'code') { v = normCode(v); if (!v) continue; }
+      else if (k === 'short_code') { v = String(v ?? '').toUpperCase().replace(/\s+/g, ''); if (!v) v = null; else if (!/^[A-Z0-9]{1,10}$/.test(v)) throw E('invalid_short_code', v); }
+      else if (k === 'product_url') { v = trimOrNull(v); if (v !== null && !URL_RE.test(v)) throw E('invalid_url'); }
       else if (k === 'name') v = v === null ? '' : String(v).trim();
       else if (BOOL_COLS.has(k)) v = Boolean(v);
       else if (NUM_COLS.has(k)) {
@@ -757,10 +814,11 @@ export function createApi({ LgrError, client } = {}) {
 
     // ---- Inventur ----
     listInventories: wrap(async () => (await q(sb.from('inventories').select('*').order('started_at', { ascending: false }).order('id'))) || []),
-    createInventory: wrap(async ({ name, note } = {}) => {
+    createInventory: wrap(async ({ name, note, location_id } = {}) => {
       const n = trimOrNull(name);
       if (!n) throw E('name_required');
-      return q(sb.from('inventories').insert({ name: n, note: trimOrNull(note) }).select('*').single());
+      if (location_id && !isUuid(location_id)) throw E('invalid_location');
+      return q(sb.from('inventories').insert({ name: n, note: trimOrNull(note), location_id: location_id || null }).select('*').single());
     }),
     getInventory: wrap(async (id) => {
       if (!isUuid(id)) return null;
@@ -786,6 +844,279 @@ export function createApi({ LgrError, client } = {}) {
     closeInventory: wrap(async (inventoryId, apply) => {
       if (!isUuid(inventoryId)) throw E('not_found');
       return rpc('inventory_close', { p_inventory: inventoryId, p_apply: Boolean(apply) });
+    }),
+
+    // ---- Lager organisieren: Kategorien ----
+    listCategories: wrap(async ({ includeArchived = false } = {}) => {
+      const rows = await fetchAll(() => {
+        let qb = sb.from('category_paths').select('*');
+        if (!includeArchived) qb = qb.eq('archived', false);
+        return qb.order('depth').order('sort').order('name').order('id');
+      });
+      return treeOrder(rows);
+    }),
+    saveCategory: wrap(async (obj) => {
+      if (!obj || typeof obj !== 'object') throw E('invalid_value');
+      const payload = {};
+      if (has(obj, 'name')) { payload.name = String(obj.name ?? '').trim(); if (!payload.name) throw E('name_required'); }
+      if (has(obj, 'parent_id')) payload.parent_id = obj.parent_id || null;
+      if (has(obj, 'sort')) { const n = Number(obj.sort); if (!Number.isFinite(n)) throw E('invalid_value'); payload.sort = Math.round(n); }
+      if (has(obj, 'archived')) payload.archived = Boolean(obj.archived);
+      let id = obj.id;
+      if (!id) {
+        if (!payload.name) throw E('name_required');
+        id = (await q(sb.from('categories').insert(payload).select('id').single())).id;
+      } else {
+        if (!isUuid(id)) throw E('not_found');
+        if (Object.keys(payload).length) {
+          const rows = await q(sb.from('categories').update(payload).eq('id', id).select('id'));
+          if (!rows || !rows.length) throw await zeroRowsError('categories', id);
+        }
+      }
+      return getOne('category_paths', 'id', id);
+    }),
+    deleteCategory: wrap(async (id) => {
+      if (!isUuid(id)) throw E('not_found');
+      const rows = await q(sb.from('categories').delete().eq('id', id).select('id'));
+      if (!rows || !rows.length) throw await zeroRowsError('categories', id);
+    }),
+
+    // ---- Räume, Kennzahlen ----
+    listSpaces: wrap(async () => sortRows((await q(sb.from('space_overview').select('*').eq('archived', false))) || [], 'name')),
+    orgStats: wrap(async () => (await q(sb.from('org_stats').select('*').maybeSingle())) || {}),
+    setLocationOrganized: wrap(async (locationId, done) => {
+      if (!isUuid(locationId)) throw E('not_found');
+      return rpc('set_location_organized', { p_location: locationId, p_done: Boolean(done) });
+    }),
+
+    // ---- Fotos ----
+    listPhotos: wrap(async ({ locationId, spaceId, status, ids } = {}) => {
+      const rows = await fetchAll(() => {
+        let qb = sb.from('photo_overview').select('*');
+        if (locationId) qb = qb.eq('location_id', locationId);
+        if (spaceId) qb = qb.eq('root_id', spaceId);
+        if (status) qb = Array.isArray(status) ? qb.in('status', status) : qb.eq('status', status);
+        if (Array.isArray(ids)) qb = qb.in('id', ids.filter(isUuid));
+        return qb.order('created_at').order('file_name').order('id');
+      });
+      return rows;
+    }),
+    importPhoto: wrap(async (file, { locationId, folder, sha256 } = {}) => {
+      if (!file || typeof file.size !== 'number') throw E('file_required');
+      const origMime = String(file.type || '').toLowerCase() || guessImageMime(file.name);
+      if (!IMAGE_MIME.includes(origMime)) throw E('file_type', origMime || '?');
+      if (locationId && !isUuid(locationId)) throw E('invalid_location');
+      const sha = String(sha256 || await sha256Of(file)).toLowerCase();
+      if (!/^[0-9a-f]{64}$/.test(sha)) throw E('invalid_file');
+      const existing = await getOne('photo_overview', 'sha256', sha);
+      if (existing) return { photo: existing, duplicate: true };
+      let body = file;
+      let mime = origMime;
+      const small = await resizeImage(file, IMAGE_MAX_PX, IMAGE_QUALITY);
+      if (small) { body = small; mime = 'image/jpeg'; }
+      if (body.size > MAX_UPLOAD_BYTES) throw E('file_too_large');
+      const dims = await imageSize(body);
+      const path = `photos/${sha}.${mime === 'image/jpeg' ? 'jpg' : extFor(file.name, mime)}`;
+      // Unter photos/ dürfen nur Lagerverantwortliche/Admins hochladen (Storage-Regel). Existiert die Datei schon
+      // (abgebrochener früherer Versuch derselben Datei = gleicher SHA-256), wird sie weiterverwendet.
+      try {
+        await q(sb.storage.from(BUCKET).upload(path, body, { contentType: mime, upsert: false, cacheControl: '3600' }));
+      } catch (err) {
+        if (!(err instanceof LgrError && err.code === 'duplicate')) throw err;
+      }
+      let row;
+      try {
+        row = await q(sb.from('photos').insert({
+          location_id: locationId || null, path, sha256: sha, file_name: String(file.name || 'foto').slice(0, 255),
+          folder: trimOrNull(folder), mime, size_bytes: body.size, width: dims ? dims.w : null, height: dims ? dims.h : null,
+        }).select('id').single());
+      } catch (err) {
+        if (err instanceof LgrError && err.code === 'duplicate') {
+          const again = await getOne('photo_overview', 'sha256', sha);
+          if (again) return { photo: again, duplicate: true };
+        }
+        // keine verwaiste Datei zurücklassen
+        try { await sb.storage.from(BUCKET).remove([path]); } catch { /* egal */ }
+        throw err;
+      }
+      return { photo: await getOne('photo_overview', 'id', row.id), duplicate: false };
+    }),
+    setPhotoStatus: wrap(async (ids, status) => {
+      const list = (Array.isArray(ids) ? ids : [ids]).filter(isUuid);
+      if (!PHOTO_STATUS.includes(status)) throw E('invalid_status');
+      if (!list.length) return 0;
+      return rpc('set_photo_status', { p_ids: list, p_status: status });
+    }),
+    movePhoto: wrap(async (id, locationId) => {
+      if (!isUuid(id)) throw E('not_found');
+      if (locationId && !isUuid(locationId)) throw E('invalid_location');
+      const rows = await q(sb.from('photos').update({ location_id: locationId || null }).eq('id', id).select('id'));
+      if (!rows || !rows.length) throw await zeroRowsError('photos', id);
+      return getOne('photo_overview', 'id', id);
+    }),
+    deletePhoto: wrap(async (photo) => {
+      const id = typeof photo === 'string' ? photo : photo && photo.id;
+      if (!isUuid(id)) throw E('not_found');
+      const rows = await q(sb.from('photos').delete().eq('id', id).select('id, path'));
+      if (!rows || !rows.length) throw await zeroRowsError('photos', id);
+      urlCache.delete(rows[0].path);
+      try { await sb.storage.from(BUCKET).remove([rows[0].path]); } catch (err) { console.warn('[api] Datei bleibt im Speicher:', err); }
+    }),
+    importAnalysis: wrap(async (items, source) => {
+      if (!Array.isArray(items)) throw E('invalid_input');
+      if (items.length > ANALYSIS_CHUNK_MAX) throw E('too_many');
+      return rpc('import_photo_analysis', { p_items: items, p_source: trimOrNull(source) || 'KI-Analyse' });
+    }),
+
+    // ---- Erkennungen ----
+    listDetections: wrap(async ({ spaceId, photoId, status, articleId, machineId } = {}) => fetchAll(() => {
+      let qb = sb.from('detection_overview').select('*');
+      if (spaceId) qb = qb.eq('space_id', spaceId);
+      if (photoId) qb = qb.eq('photo_id', photoId);
+      if (articleId) qb = qb.eq('article_id', articleId);
+      if (machineId) qb = qb.eq('machine_id', machineId);
+      if (status) qb = Array.isArray(status) ? qb.in('status', status) : qb.eq('status', status);
+      return qb.order('created_at').order('id');
+    })),
+    reviewDetection: wrap(async (id, action, data = {}) => {
+      if (!isUuid(id)) throw E('not_found');
+      return rpc('review_detection', { p_id: id, p_action: String(action || ''), p_data: data && typeof data === 'object' ? data : {} });
+    }),
+    addDetection: wrap(async (photoId, data = {}) => {
+      if (!isUuid(photoId)) throw E('not_found');
+      return rpc('add_detection', { p_photo: photoId, p_data: data && typeof data === 'object' ? data : {} });
+    }),
+
+    // ---- Organisationsaufgaben ----
+    listTasks: wrap(async ({ locationId, spaceId, status } = {}) => {
+      const rows = await fetchAll(() => {
+        let qb = sb.from('org_task_overview').select('*');
+        if (locationId) qb = qb.eq('location_id', locationId);
+        if (spaceId) qb = qb.eq('root_id', spaceId);
+        if (status) qb = Array.isArray(status) ? qb.in('status', status) : qb.eq('status', status);
+        return qb.order('created_at').order('id');
+      });
+      const rank = { offen: 0, erledigt: 1, verworfen: 2 };
+      return rows.sort((a, b) => (rank[a.status] - rank[b.status]) || ((a.sort || 0) - (b.sort || 0))
+        || String(a.created_at).localeCompare(String(b.created_at)));
+    }),
+    saveTask: wrap(async (obj) => {
+      if (!obj || typeof obj !== 'object') throw E('invalid_value');
+      const text = (k) => (has(obj, k) ? trimOrNull(obj[k]) : undefined);
+      let id = obj.id;
+      if (!id) {
+        const title = text('title');
+        if (!title) throw E('name_required');
+        if (!isUuid(obj.location_id)) throw E('invalid_location');
+        const row = { location_id: obj.location_id, title, details: text('details') ?? null,
+          source: obj.source || 'manuell', status: obj.status || 'offen', assigned_to: obj.assigned_to || null,
+          photo_id: obj.photo_id || null, sort: Number.isFinite(Number(obj.sort)) ? Math.round(Number(obj.sort)) : 0 };
+        id = (await q(sb.from('org_tasks').insert(row).select('id').single())).id;
+      } else {
+        if (!isUuid(id)) throw E('not_found');
+        const patch = {};
+        if (has(obj, 'title')) { patch.title = text('title'); if (!patch.title) throw E('name_required'); }
+        if (has(obj, 'details')) patch.details = text('details');
+        if (has(obj, 'status')) patch.status = obj.status;
+        if (has(obj, 'assigned_to')) patch.assigned_to = obj.assigned_to || null;
+        if (has(obj, 'sort')) patch.sort = Math.round(Number(obj.sort) || 0);
+        if (Object.keys(patch).length) {
+          const rows = await q(sb.from('org_tasks').update(patch).eq('id', id).select('id'));
+          if (!rows || !rows.length) throw await zeroRowsError('org_tasks', id);
+        }
+      }
+      return getOne('org_task_overview', 'id', id);
+    }),
+
+    // ---- Bereiche auf Fotos ----
+    listHotspots: wrap(async ({ photoId, photoIds } = {}) => {
+      const ids = (photoIds || (photoId ? [photoId] : [])).filter(isUuid);
+      if (!ids.length) return [];
+      const rows = (await q(sb.from('photo_hotspots').select('*').in('photo_id', ids).order('created_at').order('id'))) || [];
+      const locIds = [...new Set(rows.map((r) => r.location_id))];
+      const locs = locIds.length ? (await q(sb.from('locations').select('id, code, name, type').in('id', locIds))) || [] : [];
+      const byId = new Map(locs.map((l) => [l.id, l]));
+      return rows.map((r) => {
+        const l = byId.get(r.location_id);
+        return { ...r, location_code: l ? l.code : null, location_name: l ? l.name : null, location_type: l ? l.type : null };
+      });
+    }),
+    saveHotspot: wrap(async (obj) => {
+      if (!obj || typeof obj !== 'object') throw E('invalid_value');
+      const pick = {};
+      for (const k of ['location_id', 'x', 'y', 'w', 'h', 'label']) if (has(obj, k)) pick[k] = obj[k];
+      for (const k of ['x', 'y', 'w', 'h']) {
+        if (!has(pick, k)) continue;
+        if (pick[k] === null && (k === 'w' || k === 'h')) continue;
+        const n = Number(pick[k]);
+        if (!Number.isFinite(n) || n < 0 || n > 1) throw E('invalid_value');
+        pick[k] = Math.round(n * 10000) / 10000;
+      }
+      if (has(pick, 'label')) pick.label = trimOrNull(pick.label);
+      let row;
+      if (!obj.id) {
+        if (!isUuid(obj.photo_id) || !isUuid(pick.location_id)) throw E('invalid_location');
+        row = await q(sb.from('photo_hotspots').insert({ photo_id: obj.photo_id, ...pick }).select('*').single());
+      } else {
+        if (!isUuid(obj.id)) throw E('not_found');
+        const rows = await q(sb.from('photo_hotspots').update(pick).eq('id', obj.id).select('*'));
+        if (!rows || !rows.length) throw await zeroRowsError('photo_hotspots', obj.id);
+        row = rows[0];
+      }
+      const l = await q(sb.from('locations').select('code, name, type').eq('id', row.location_id).maybeSingle());
+      return { ...row, location_code: l ? l.code : null, location_name: l ? l.name : null, location_type: l ? l.type : null };
+    }),
+    deleteHotspot: wrap(async (id) => {
+      if (!isUuid(id)) throw E('not_found');
+      const rows = await q(sb.from('photo_hotspots').delete().eq('id', id).select('id'));
+      if (!rows || !rows.length) throw await zeroRowsError('photo_hotspots', id);
+    }),
+
+    // ---- Sets ----
+    listComponents: wrap(async (setId) => {
+      if (!isUuid(setId)) return [];
+      const rows = (await q(sb.from('set_components').select('*').eq('set_id', setId).order('sort').order('created_at').order('id'))) || [];
+      const mIds = [...new Set(rows.map((r) => r.machine_id).filter(Boolean))];
+      const aIds = [...new Set(rows.map((r) => r.article_id).filter(Boolean))];
+      const [ms, as] = await Promise.all([
+        mIds.length ? q(sb.from('machines').select('id, code, name').in('id', mIds)) : [],
+        aIds.length ? q(sb.from('articles').select('id, code, name, unit').in('id', aIds)) : [],
+      ]);
+      const mm = new Map((ms || []).map((m) => [m.id, m]));
+      const am = new Map((as || []).map((a) => [a.id, a]));
+      return rows.map((r) => ({
+        ...r,
+        machine_code: mm.get(r.machine_id)?.code ?? null, machine_name: mm.get(r.machine_id)?.name ?? null,
+        article_code: am.get(r.article_id)?.code ?? null, article_name: am.get(r.article_id)?.name ?? null,
+        unit: am.get(r.article_id)?.unit ?? null,
+      }));
+    }),
+    saveComponent: wrap(async (obj) => {
+      if (!obj || typeof obj !== 'object') throw E('invalid_value');
+      const qty = has(obj, 'qty') ? num(obj.qty) : undefined;
+      if (qty !== undefined && (qty === null || Number.isNaN(qty) || qty <= 0)) throw E('invalid_qty');
+      if (!obj.id) {
+        if (!isUuid(obj.set_id)) throw E('not_found');
+        const row = { set_id: obj.set_id, machine_id: obj.machine_id || null, article_id: obj.article_id || null,
+          name: trimOrNull(obj.name), qty: qty ?? 1, note: trimOrNull(obj.note),
+          sort: Number.isFinite(Number(obj.sort)) ? Math.round(Number(obj.sort)) : 0 };
+        if (!row.machine_id && !row.article_id && !row.name) throw E('name_required');
+        return q(sb.from('set_components').insert(row).select('*').single());
+      }
+      if (!isUuid(obj.id)) throw E('not_found');
+      const patch = {};
+      if (qty !== undefined) patch.qty = qty;
+      if (has(obj, 'note')) patch.note = trimOrNull(obj.note);
+      if (has(obj, 'name')) patch.name = trimOrNull(obj.name);
+      if (has(obj, 'sort')) patch.sort = Math.round(Number(obj.sort) || 0);
+      const rows = await q(sb.from('set_components').update(patch).eq('id', obj.id).select('*'));
+      if (!rows || !rows.length) throw await zeroRowsError('set_components', obj.id);
+      return rows[0];
+    }),
+    deleteComponent: wrap(async (id) => {
+      if (!isUuid(id)) throw E('not_found');
+      const rows = await q(sb.from('set_components').delete().eq('id', id).select('id'));
+      if (!rows || !rows.length) throw await zeroRowsError('set_components', id);
     }),
 
     // ---- Protokoll ----

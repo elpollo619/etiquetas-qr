@@ -1,10 +1,11 @@
 // Maschinen: Liste, Maschinenkarte (Ziel nach dem Scannen), Ausleihen/Zurückgeben, Formular, ausgeliehene Maschinen.
 // Routen: 'maschinen', 'maschinen/neu', 'm/:code', 'm/:code/bearbeiten', 'ausgeliehen'
-import { t, registerStrings, fmtDateTime, fmtElapsed, locale } from '../i18n.js';
+import { t, registerStrings, fmtDateTime, fmtElapsed, fmtNum, fmtQty, locale } from '../i18n.js';
 import {
   esc, clean, uuid, debounce, can, statusPill, conditionLabel, emptyHtml, errorText, toast, sheet,
-  confirmSheet, openLightbox, thumbHtml, hydrateThumbs, downloadCsv, formData, toLocalInput, fromLocalInput, icon,
+  confirmSheet, openLightbox, thumbHtml, hydrateThumbs, downloadCsv, formData, toLocalInput, fromLocalInput, icon, numOrNull,
 } from '../util.js';
+import { categoryOptionsHtml, categorySubtreeIds, confidencePill, sourceLabel } from '../org-common.js';
 
 // ---------------------------------------------------------------------------
 // Texte (de-CH ohne Eszett, pt-PT, es)
@@ -179,6 +180,58 @@ registerStrings({
     'machines.loans.csvNoteOut': 'Bemerkung Ausleihe',
     'machines.loans.csvNoteBack': 'Bemerkung Rückgabe',
     'machines.loans.csvCorrected': 'Korrigiert',
+    'machines.allCategories': 'Alle Kategorien',
+    'machines.catLink': 'Alles in dieser Kategorie anzeigen',
+    'machines.responsible': 'Verantwortlich',
+    'machines.noResponsible': '– niemand –',
+    'machines.productUrl': 'Herstellerseite',
+    'machines.productHint': 'Produktbild: nur Link, Nutzungsrechte nicht geprüft',
+    'machines.codePath': 'Lesbarer Code {code}',
+    'machines.set': 'Set',
+    'machines.form.categoryLegacy': 'Bisherige Kategorie (Freitext): «{text}». Wähle eine Kategorie aus der Liste – sonst bleibt der Freitext erhalten.',
+    'machines.form.responsibleHint': 'Zugeteilte Person, z. B. bei einem Laptop oder Firmenhandy.',
+    'machines.form.productUrlPh': 'https://…',
+    'machines.form.productUrlHint': 'Nur ein Link zur Produktseite (http/https). Es werden keine fremden Bilder geladen.',
+    'machines.form.productUrlInvalid': 'Bitte eine vollständige Adresse eingeben, die mit http:// oder https:// beginnt.',
+    'machines.form.isSet': 'Ist ein Set (mit Komponenten)',
+    'machines.form.isSetHint': 'Zusammengehörige Teile, z. B. Koffer mit Akkus und Ladegerät. Die Komponenten erfasst du danach auf der Maschinenkarte.',
+    'machines.comp.title': 'Komponenten',
+    'machines.comp.count1': '1 Komponente',
+    'machines.comp.countN': '{n} Komponenten',
+    'machines.comp.empty': 'Noch keine Komponenten erfasst.',
+    'machines.comp.add': 'Komponente hinzufügen',
+    'machines.comp.kind': 'Art der Komponente',
+    'machines.comp.kindArticle': 'Artikel',
+    'machines.comp.kindMachine': 'Maschine',
+    'machines.comp.kindFree': 'Freier Name',
+    'machines.comp.search': 'Suchen',
+    'machines.comp.searchPh': 'Name oder Code…',
+    'machines.comp.noResults': 'Nichts gefunden.',
+    'machines.comp.chooseHint': 'Bitte einen Eintrag aus der Liste wählen.',
+    'machines.comp.freeName': 'Name der Komponente',
+    'machines.comp.freeNamePh': 'z. B. Ladegerät 18 V',
+    'machines.comp.qty': 'Menge',
+    'machines.comp.note': 'Notiz',
+    'machines.comp.notePh': 'z. B. Fach links im Koffer',
+    'machines.comp.saved': 'Komponente gespeichert',
+    'machines.comp.edit': 'Menge ändern',
+    'machines.comp.editTitle': 'Komponente: {name}',
+    'machines.comp.remove': 'Entfernen',
+    'machines.comp.removeQ': 'Komponente entfernen?',
+    'machines.comp.removeText': '«{name}» wird aus der Komponentenliste entfernt. Die Maschine bzw. der Artikel selbst bleibt erhalten.',
+    'machines.comp.removed': 'Komponente entfernt',
+    'machines.comp.check': 'Komponenten prüfen ({n})',
+    'machines.comp.checkHint': 'Zum Abhaken vor Ort, damit nichts fehlt – wird nicht gespeichert.',
+    'machines.comp.checked': '{n} von {total} abgehakt',
+    'machines.comp.checkNone': 'Für dieses Set sind noch keine Komponenten erfasst.',
+    'machines.det.title': 'Originalfotos aus der Fotoanalyse',
+    'machines.det.intro': 'Aus diesen Fotos wurde der Eintrag erkannt. Foto antippen = gross.',
+    'machines.det.file': 'Datei',
+    'machines.det.place': 'Aufgenommen in',
+    'machines.det.conf': 'Sicherheit',
+    'machines.det.source': 'Herkunft',
+    'machines.det.as': 'Erkannt als',
+    'machines.det.zoom': 'Foto «{name}» vergrössern',
   },
   pt: {
     'machines.title': 'Máquinas',
@@ -349,6 +402,58 @@ registerStrings({
     'machines.loans.csvNoteOut': 'Observação levantamento',
     'machines.loans.csvNoteBack': 'Observação devolução',
     'machines.loans.csvCorrected': 'Corrigido',
+    'machines.allCategories': 'Todas as categorias',
+    'machines.catLink': 'Ver tudo nesta categoria',
+    'machines.responsible': 'Responsável',
+    'machines.noResponsible': '– ninguém –',
+    'machines.productUrl': 'Página do fabricante',
+    'machines.productHint': 'Imagem do produto: só ligação, direitos de utilização não verificados',
+    'machines.codePath': 'Código legível {code}',
+    'machines.set': 'Conjunto',
+    'machines.form.categoryLegacy': 'Categoria anterior (texto livre): «{text}». Escolhe uma categoria da lista – caso contrário, o texto livre mantém-se.',
+    'machines.form.responsibleHint': 'Pessoa atribuída, p. ex. para um portátil ou telemóvel da empresa.',
+    'machines.form.productUrlPh': 'https://…',
+    'machines.form.productUrlHint': 'Só uma ligação para a página do produto (http/https). Não são carregadas imagens externas.',
+    'machines.form.productUrlInvalid': 'Introduz um endereço completo que comece por http:// ou https://.',
+    'machines.form.isSet': 'É um conjunto (com componentes)',
+    'machines.form.isSetHint': 'Peças que pertencem juntas, p. ex. mala com baterias e carregador. Os componentes registam-se depois na ficha da máquina.',
+    'machines.comp.title': 'Componentes',
+    'machines.comp.count1': '1 componente',
+    'machines.comp.countN': '{n} componentes',
+    'machines.comp.empty': 'Ainda não há componentes registados.',
+    'machines.comp.add': 'Adicionar componente',
+    'machines.comp.kind': 'Tipo de componente',
+    'machines.comp.kindArticle': 'Artigo',
+    'machines.comp.kindMachine': 'Máquina',
+    'machines.comp.kindFree': 'Nome livre',
+    'machines.comp.search': 'Pesquisar',
+    'machines.comp.searchPh': 'Nome ou código…',
+    'machines.comp.noResults': 'Nada encontrado.',
+    'machines.comp.chooseHint': 'Escolhe um registo da lista.',
+    'machines.comp.freeName': 'Nome do componente',
+    'machines.comp.freeNamePh': 'ex.: Carregador 18 V',
+    'machines.comp.qty': 'Quantidade',
+    'machines.comp.note': 'Nota',
+    'machines.comp.notePh': 'ex.: compartimento esquerdo da mala',
+    'machines.comp.saved': 'Componente guardado',
+    'machines.comp.edit': 'Alterar quantidade',
+    'machines.comp.editTitle': 'Componente: {name}',
+    'machines.comp.remove': 'Remover',
+    'machines.comp.removeQ': 'Remover o componente?',
+    'machines.comp.removeText': '«{name}» é removido da lista de componentes. A máquina ou o artigo em si mantém-se.',
+    'machines.comp.removed': 'Componente removido',
+    'machines.comp.check': 'Verificar componentes ({n})',
+    'machines.comp.checkHint': 'Para marcar no local, para que nada falte – não é guardado.',
+    'machines.comp.checked': '{n} de {total} marcados',
+    'machines.comp.checkNone': 'Este conjunto ainda não tem componentes registados.',
+    'machines.det.title': 'Fotos originais da análise de fotos',
+    'machines.det.intro': 'O registo foi reconhecido a partir destas fotos. Toca na foto para ampliar.',
+    'machines.det.file': 'Ficheiro',
+    'machines.det.place': 'Tirada em',
+    'machines.det.conf': 'Certeza',
+    'machines.det.source': 'Origem',
+    'machines.det.as': 'Reconhecido como',
+    'machines.det.zoom': 'Ampliar a foto «{name}»',
   },
   es: {
     'machines.title': 'Máquinas',
@@ -519,6 +624,58 @@ registerStrings({
     'machines.loans.csvNoteOut': 'Observación retirada',
     'machines.loans.csvNoteBack': 'Observación devolución',
     'machines.loans.csvCorrected': 'Corregido',
+    'machines.allCategories': 'Todas las categorías',
+    'machines.catLink': 'Ver todo en esta categoría',
+    'machines.responsible': 'Responsable',
+    'machines.noResponsible': '– nadie –',
+    'machines.productUrl': 'Página del fabricante',
+    'machines.productHint': 'Imagen del producto: solo enlace, derechos de uso no comprobados',
+    'machines.codePath': 'Código legible {code}',
+    'machines.set': 'Set',
+    'machines.form.categoryLegacy': 'Categoría anterior (texto libre): «{text}». Elige una categoría de la lista; si no, se conserva el texto libre.',
+    'machines.form.responsibleHint': 'Persona asignada, p. ej. para un portátil o un móvil de empresa.',
+    'machines.form.productUrlPh': 'https://…',
+    'machines.form.productUrlHint': 'Solo un enlace a la página del producto (http/https). No se cargan imágenes externas.',
+    'machines.form.productUrlInvalid': 'Introduce una dirección completa que empiece por http:// o https://.',
+    'machines.form.isSet': 'Es un set (con componentes)',
+    'machines.form.isSetHint': 'Piezas que van juntas, p. ej. maletín con baterías y cargador. Los componentes se registran después en la ficha de la máquina.',
+    'machines.comp.title': 'Componentes',
+    'machines.comp.count1': '1 componente',
+    'machines.comp.countN': '{n} componentes',
+    'machines.comp.empty': 'Todavía no hay componentes registrados.',
+    'machines.comp.add': 'Añadir componente',
+    'machines.comp.kind': 'Tipo de componente',
+    'machines.comp.kindArticle': 'Artículo',
+    'machines.comp.kindMachine': 'Máquina',
+    'machines.comp.kindFree': 'Nombre libre',
+    'machines.comp.search': 'Buscar',
+    'machines.comp.searchPh': 'Nombre o código…',
+    'machines.comp.noResults': 'No se ha encontrado nada.',
+    'machines.comp.chooseHint': 'Elige una entrada de la lista.',
+    'machines.comp.freeName': 'Nombre del componente',
+    'machines.comp.freeNamePh': 'p. ej. Cargador 18 V',
+    'machines.comp.qty': 'Cantidad',
+    'machines.comp.note': 'Nota',
+    'machines.comp.notePh': 'p. ej. compartimento izquierdo del maletín',
+    'machines.comp.saved': 'Componente guardado',
+    'machines.comp.edit': 'Cambiar cantidad',
+    'machines.comp.editTitle': 'Componente: {name}',
+    'machines.comp.remove': 'Quitar',
+    'machines.comp.removeQ': '¿Quitar el componente?',
+    'machines.comp.removeText': '«{name}» se quita de la lista de componentes. La máquina o el artículo en sí se conserva.',
+    'machines.comp.removed': 'Componente quitado',
+    'machines.comp.check': 'Comprobar componentes ({n})',
+    'machines.comp.checkHint': 'Para marcar en el sitio y que no falte nada; no se guarda.',
+    'machines.comp.checked': '{n} de {total} marcados',
+    'machines.comp.checkNone': 'Este set todavía no tiene componentes registrados.',
+    'machines.det.title': 'Fotos originales del análisis de fotos',
+    'machines.det.intro': 'La entrada se reconoció a partir de estas fotos. Toca la foto para ampliarla.',
+    'machines.det.file': 'Archivo',
+    'machines.det.place': 'Tomada en',
+    'machines.det.conf': 'Seguridad',
+    'machines.det.source': 'Origen',
+    'machines.det.as': 'Reconocido como',
+    'machines.det.zoom': 'Ampliar la foto «{name}»',
   },
 });
 
@@ -645,6 +802,139 @@ async function printLabel(m) {
   try { await labels.openLabelDialog([labels.labelItem('machine', m)]); } catch (err) { toast(errorText(err), 'error'); }
 }
 
+// ---------------------------------------------------------------------------
+// Erweiterung «Lager organisieren»: Kategorie, Herstellerseite, Originalfotos, Sets
+// ---------------------------------------------------------------------------
+// Nur http/https als Link zulassen (Daten können aus einem Import stammen)
+function safeUrl(v) {
+  const s = String(v ?? '').trim();
+  if (!s || /\s/.test(s)) return null;
+  try {
+    const u = new URL(s);
+    return (u.protocol === 'http:' || u.protocol === 'https:') && u.hostname ? u.href : null;
+  } catch (e) { return null; }
+}
+function productLinkHtml(url) {
+  const href = safeUrl(url);
+  if (!href) return '';
+  let host = href;
+  try { host = new URL(href).hostname.replace(/^www\./, ''); } catch (e) { /* egal */ }
+  return `<a href="${esc(href)}" target="_blank" rel="noopener noreferrer nofollow">${esc(host)} ${icon('arrowOut')}</a>
+    <div class="small muted" style="font-weight:400">${esc(t('machines.productHint'))}</div>`;
+}
+// Kategorie: Pfad als Link zur Suche (#/suche?kat=<id>), sonst bisheriger Freitext
+function categoryHtml(m) {
+  if (m.category_id && (m.category_path || m.category)) {
+    return `<a href="#/suche?kat=${encodeURIComponent(m.category_id)}" title="${esc(t('machines.catLink'))}">${esc(m.category_path || m.category)}</a>`;
+  }
+  return m.category ? esc(m.category) : '';
+}
+function catText(m) { return m.category_path || m.category || ''; }
+async function safeList(fn) {
+  try { const r = await fn(); return Array.isArray(r) ? r : []; } catch (e) { return []; }
+}
+
+// Komponenten eines Sets (Zeilen aus api.listComponents)
+function compName(c) { return c.machine_name || c.article_name || c.name || '–'; }
+function compCode(c) { return c.machine_code || c.article_code || ''; }
+function compHref(c) {
+  if (c.machine_id && c.machine_code) return '#/m/' + encodeURIComponent(c.machine_code);
+  if (c.article_id && c.article_code) return '#/a/' + encodeURIComponent(c.article_code);
+  return '';
+}
+function compQty(c) {
+  const n = Number(c.qty);
+  const q = Number.isFinite(n) ? n : 1;
+  return c.article_id && c.unit ? fmtQty(q, c.unit) : `${fmtNum(q)} ×`;
+}
+function compCountLabel(n) { return n === 1 ? t('machines.comp.count1') : t('machines.comp.countN', { n }); }
+
+// Checkliste der Komponenten im Ausleih-/Rückgabedialog (nur Anzeige zum Abhaken, keine Speicherung)
+function setChecklistHtml() {
+  return `<fieldset class="field" data-setcheck style="border:0;padding:0;margin:0;min-width:0">
+    <legend class="lbl" style="padding:0;margin-bottom:5px" data-setcheck-title>${esc(t('machines.comp.title'))}</legend>
+    <div data-setcheck-body><p class="small muted" style="margin:0">${esc(t('common.loading'))}</p></div>
+  </fieldset>`;
+}
+function fillSetChecklist(el, ctx, m) {
+  const box = el.querySelector('[data-setcheck]');
+  if (!box) return;
+  const body = box.querySelector('[data-setcheck-body]');
+  const title = box.querySelector('[data-setcheck-title]');
+  Promise.resolve()
+    .then(() => ctx.api.listComponents(m.id))
+    .then((rows) => {
+      if (!box.isConnected) return;
+      const list = Array.isArray(rows) ? rows : [];
+      if (!list.length) { body.innerHTML = `<p class="small muted" style="margin:0">${esc(t('machines.comp.checkNone'))}</p>`; return; }
+      title.textContent = t('machines.comp.check', { n: list.length });
+      body.innerHTML = `<p class="hint" style="margin:0 0 6px">${esc(t('machines.comp.checkHint'))}</p>
+        <div class="stack" style="gap:4px">${list.map((c, i) => `
+          <label class="check" style="align-items:flex-start;min-height:36px">
+            <input type="checkbox" data-setitem="${i}">
+            <span><b class="nowrap">${esc(compQty(c))}</b> ${esc(compName(c))}${compCode(c) ? ` <span class="muted mono small">${esc(compCode(c))}</span>` : ''}
+              ${c.note ? `<span class="small muted" style="display:block">${esc(c.note)}</span>` : ''}</span>
+          </label>`).join('')}</div>
+        <p class="small muted" style="margin:6px 0 0" data-setcheck-progress aria-live="polite">${esc(t('machines.comp.checked', { n: 0, total: list.length }))}</p>`;
+      const prog = body.querySelector('[data-setcheck-progress]');
+      body.addEventListener('change', () => {
+        const n = body.querySelectorAll('[data-setitem]:checked').length;
+        prog.textContent = t('machines.comp.checked', { n, total: list.length });
+      });
+    })
+    .catch((err) => { if (box.isConnected) body.innerHTML = `<p class="small" style="margin:0;color:var(--danger)">${esc(errorText(err))}</p>`; });
+}
+
+// Originalfotos aus der Fotoanalyse (detection_overview) – zeigt, woher der Eintrag stammt
+function detectionsHtml(list, name) {
+  const seen = new Set();
+  const rows = list.filter((d) => d.photo_path && !seen.has(d.photo_id || d.photo_path) && seen.add(d.photo_id || d.photo_path));
+  if (!rows.length) return '';
+  const kv = (k, v) => (v ? `<dt>${esc(k)}</dt><dd>${v}</dd>` : '');
+  const fig = (d, i) => {
+    const hasPos = d.pos_x !== null && d.pos_x !== undefined && d.pos_y !== null && d.pos_y !== undefined
+      && Number.isFinite(Number(d.pos_x)) && Number.isFinite(Number(d.pos_y));
+    const px = hasPos ? Math.min(100, Math.max(0, Number(d.pos_x) * 100)) : 0;
+    const py = hasPos ? Math.min(100, Math.max(0, Number(d.pos_y) * 100)) : 0;
+    return `<figure class="card" style="margin:0;padding:8px;display:flex;flex-direction:column;gap:8px">
+      <button type="button" data-detzoom="${i}" aria-label="${esc(t('machines.det.zoom', { name: d.photo_file_name || name }))}"
+        style="position:relative;display:block;width:100%;padding:0;border:0;background:none;cursor:zoom-in;border-radius:10px;overflow:hidden">
+        <img data-path="${esc(d.photo_path)}" alt="" loading="lazy" style="display:block;width:100%;height:auto;min-height:120px;background:var(--surface-3)">
+        ${hasPos ? `<span aria-hidden="true" style="position:absolute;left:${px}%;top:${py}%;width:26px;height:26px;margin:-13px 0 0 -13px;border-radius:50%;border:3px solid #fff;box-shadow:0 0 0 2px var(--danger),0 1px 6px rgba(0,0,0,.5)"></span>` : ''}
+      </button>
+      <figcaption><dl class="kv left small" style="gap:4px 10px">
+        ${kv(t('machines.det.file'), d.photo_file_name ? `<span style="font-weight:500;overflow-wrap:anywhere">${esc(d.photo_file_name)}</span>` : '')}
+        ${kv(t('machines.det.place'), d.photo_location_path ? `<span style="font-weight:500">${esc(d.photo_location_path)}</span>` : '')}
+        ${kv(t('machines.det.conf'), confidencePill(d.confidence))}
+        ${kv(t('machines.det.source'), `<span style="font-weight:500">${esc(sourceLabel(d.source))}</span>`)}
+        ${d.name && d.name !== name ? kv(t('machines.det.as'), `<span style="font-weight:500">${esc(d.name)}</span>`) : ''}
+      </dl></figcaption>
+    </figure>`;
+  };
+  return `<p class="hint" style="margin:0 0 8px">${esc(t('machines.det.intro'))}</p>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,240px),1fr));gap:12px">${rows.map(fig).join('')}</div>`;
+}
+function mountDetections(section, ctx, filter, name) {
+  if (!section || typeof ctx.api.listDetections !== 'function') return;
+  Promise.resolve()
+    .then(() => ctx.api.listDetections(filter))
+    .then((rows) => {
+      if (!section.isConnected) return;
+      const html = detectionsHtml(Array.isArray(rows) ? rows : [], name);
+      if (!html) return;   // von Hand erfasst → kein Abschnitt
+      const box = section.querySelector('[data-det-body]');
+      box.innerHTML = html;
+      section.hidden = false;
+      hydrateThumbs(box, ctx.api);
+      box.addEventListener('click', (e) => {
+        const b = e.target.closest('[data-detzoom]');
+        const img = b && b.querySelector('img');
+        if (img && img.src) openLightbox(img.src, name);
+      });
+    })
+    .catch(() => { /* Originalfotos sind nicht kritisch */ });
+}
+
 // Unterlagerorte einschliessen (Filter «Hauptlager» zeigt auch «Hauptlager / Regal B»)
 function descendants(locs, id) {
   const kids = new Map();
@@ -720,7 +1010,11 @@ function renderMachineCard(ctx, root, m, mods) {
     + (m.inventory_no ? ` · ${esc(t('machines.inventoryNo'))} ${esc(m.inventory_no)}` : '');
   const pills = statusPill(m.status)
     + (overdue ? ` <span class="pill pill-danger">${esc(t('machines.overdue'))}</span>` : '')
+    + (m.is_set ? ` <span class="pill pill-info">${esc(t('machines.set'))}</span>` : '')
     + (m.archived ? ` <span class="pill pill-muted">${esc(t('common.archived'))}</span>` : '');
+  const locHtml = m.location_path
+    ? `${esc(m.location_path)}${m.location_code_path ? `<div class="small muted mono" style="font-weight:400">${esc(t('machines.codePath', { code: m.location_code_path }))}</div>` : ''}`
+    : '–';
 
   // --- Nutzung (dl.kv) ---
   const kv = (label, value) => `<dt>${esc(label)}</dt><dd>${value}</dd>`;
@@ -745,11 +1039,12 @@ function renderMachineCard(ctx, root, m, mods) {
     } else {
       usage.push(kv(t('machines.lastUser'), `<span class="muted" style="font-weight:400">${esc(t('machines.neverLent'))}</span>`));
     }
-    usage.push(kv(t('common.location'), esc(m.location_path || '–')));
+    usage.push(kv(t('common.location'), locHtml));
     const condColor = m.condition === 'defekt' ? 'var(--danger)' : m.condition === 'maengel' ? 'var(--warn)' : '';
     usage.push(kv(t('machines.condition'), `<span${condColor ? ` style="color:${condColor}"` : ''}>${esc(conditionLabel(m.condition || 'ok'))}</span>`
       + (m.condition_note ? `<div class="small muted" style="font-weight:400;white-space:pre-wrap">${esc(m.condition_note)}</div>` : '')));
   }
+  if (m.responsible_name) usage.push(kv(t('machines.responsible'), personHtml(ctx, m.responsible_id, m.responsible_name)));
   const notices = [];
   if (overdue && m.open_due_at) {
     notices.push(`<div class="alert danger" role="alert">${icon('alert')}<span>${esc(t('machines.overdueSince', { date: fmtDateTime(m.open_due_at), elapsed: fmtElapsed(m.open_due_at) }))}</span></div>`);
@@ -780,11 +1075,12 @@ function renderMachineCard(ctx, root, m, mods) {
 
   // --- Details ---
   const details = [
-    ['common.category', m.category], ['common.brand', m.brand], ['common.model', m.model],
-    ['machines.serialNo', m.serial_no], ['machines.inventoryNo', m.inventory_no],
+    ['common.category', categoryHtml(m)], ['common.brand', esc(m.brand)], ['common.model', esc(m.model)],
+    ['machines.serialNo', esc(m.serial_no)], ['machines.inventoryNo', esc(m.inventory_no)],
+    ['machines.productUrl', productLinkHtml(m.product_url)],
   ].filter(([, v]) => clean(v));
   const detailsHtml = (details.length || m.notes)
-    ? `${details.length ? `<dl class="kv">${details.map(([k, v]) => kv(t(k), esc(v))).join('')}</dl>` : ''}
+    ? `${details.length ? `<dl class="kv">${details.map(([k, v]) => kv(t(k), v)).join('')}</dl>` : ''}
        ${m.notes ? `<div${details.length ? ' style="margin-top:12px"' : ''}><div class="small muted" style="font-weight:650">${esc(t('common.notes'))}</div><p style="white-space:pre-wrap;margin:4px 0 0">${esc(m.notes)}</p></div>` : ''}`
     : `<p class="muted" style="margin:0">${esc(t('machines.noDetails'))}</p>`;
 
@@ -826,6 +1122,10 @@ function renderMachineCard(ctx, root, m, mods) {
       </div>
     </div>
     ${actionHtml}
+    ${m.is_set ? `<section class="section" aria-labelledby="mc-comp-h">
+      <div class="section-head"><h2 id="mc-comp-h">${esc(t('machines.comp.title'))}</h2><span class="small muted" data-comp-count></span></div>
+      <div class="stack" data-comp>${loadingHtml()}</div>
+    </section>` : ''}
     <section class="section" aria-labelledby="mc-hist-h">
       <div class="section-head"><h2 id="mc-hist-h">${esc(t('machines.hist.title'))}</h2><span class="small muted" data-hist-count></span></div>
       <div data-hist>${loadingHtml()}</div>
@@ -838,10 +1138,53 @@ function renderMachineCard(ctx, root, m, mods) {
       <h2 id="mc-det-h">${esc(t('common.details'))}</h2>
       <div class="card">${detailsHtml}</div>
     </section>
+    <section class="section" aria-labelledby="mc-det-photos-h" data-det hidden>
+      <h2 id="mc-det-photos-h">${esc(t('machines.det.title'))}</h2>
+      <div data-det-body></div>
+    </section>
     <div class="stack" data-media></div>
     ${manageHtml}`;
 
   hydrateThumbs(root, api);
+  mountDetections(root.querySelector('[data-det]'), ctx, { machineId: m.id }, m.name);
+
+  // Komponenten (nur Sets)
+  let comps = [];
+  const compEl = root.querySelector('[data-comp]');
+  const renderComps = () => {
+    if (!compEl) return;
+    root.querySelector('[data-comp-count]').textContent = comps.length ? compCountLabel(comps.length) : '';
+    const rows = comps.map((c) => {
+      const href = compHref(c);
+      const title = href ? `<a href="${href}">${esc(compName(c))}</a>` : esc(compName(c));
+      const sub = [compCode(c), c.note].filter(Boolean).map(esc).join(' · ');
+      return `<div class="list-item" style="flex-wrap:wrap">
+        <span class="nowrap" style="min-width:56px;font-size:17px;font-weight:750;font-variant-numeric:tabular-nums">${esc(compQty(c))}</span>
+        <div class="li-main" style="flex:1 1 160px">
+          <span class="li-title" style="white-space:normal">${title}</span>
+          ${sub ? `<span class="li-sub" style="white-space:normal">${sub}</span>` : ''}
+        </div>
+        ${staff ? `<div class="row" style="gap:6px;margin-left:auto">
+          <button type="button" class="btn sm" data-act="comp-edit" data-comp-id="${esc(c.id)}">${icon('edit')}${esc(t('machines.comp.edit'))}</button>
+          <button type="button" class="btn sm danger-outline" data-act="comp-del" data-comp-id="${esc(c.id)}" aria-label="${esc(t('machines.comp.remove'))}: ${esc(compName(c))}">${icon('trash')}${esc(t('machines.comp.remove'))}</button>
+        </div>` : ''}
+      </div>`;
+    }).join('');
+    compEl.innerHTML = (comps.length ? `<div class="list">${rows}</div>` : `<p class="muted" style="margin:0">${esc(t('machines.comp.empty'))}</p>`)
+      + (staff ? `<div><button type="button" class="btn" data-act="comp-add">${icon('plus')}${esc(t('machines.comp.add'))}</button></div>` : '');
+  };
+  const loadComps = async () => {
+    if (!compEl) return;
+    try {
+      const rows = await api.listComponents(m.id);
+      comps = Array.isArray(rows) ? rows : [];
+    } catch (err) {
+      if (compEl.isConnected) compEl.innerHTML = emptyHtml(errorText(err), `<button type="button" class="btn" data-act="comp-retry">${esc(t('btn.retry'))}</button>`);
+      return;
+    }
+    if (compEl.isConnected) renderComps();
+  };
+  loadComps();
 
   // QR-Code anzeigen, wenn es kein Foto gibt
   const qrBox = root.querySelector('[data-qr]');
@@ -921,11 +1264,178 @@ function renderMachineCard(ctx, root, m, mods) {
     else if (act === 'delete') deleteMachine(ctx, m);
     else if (act === 'hist-more') { histShown += HIST_PAGE * 4; renderHist(); }
     else if (act === 'hist-retry') loadHist();
+    else if (act === 'comp-retry') { compEl.innerHTML = loadingHtml(); loadComps(); }
+    else if (act === 'comp-add') { if (await openComponentAdd(ctx, m, comps)) loadComps(); }
+    else if (act === 'comp-edit' || act === 'comp-del') {
+      const c = comps.find((x) => String(x.id) === b.dataset.compId);
+      if (!c) return;
+      if (act === 'comp-edit' ? await openComponentEdit(ctx, c) : await removeComponent(ctx, c)) loadComps();
+    }
     else if (act === 'correct') {
       const loan = loans.find((l) => String(l.id) === b.dataset.loan);
       if (loan) openCorrection(ctx, loan);
     }
   });
+}
+
+// --- Komponenten (Sets) hinzufügen / ändern / entfernen ---
+function qtyValid(v) {
+  const n = numOrNull(v);
+  return n !== null && n > 0 && n < 1e6 ? Math.round(n * 1000) / 1000 : null;
+}
+async function openComponentAdd(ctx, m, existing) {
+  const { api } = ctx;
+  let kind = 'article';
+  let chosen = null;            // { type: 'article'|'machine', row }
+  let pool = { article: null, machine: null };
+  const body = `
+    <p class="muted" style="margin:0"><b style="color:var(--text)">${esc(m.name)}</b> · ${esc(m.code)}</p>
+    <div class="field">
+      <span class="lbl" id="mc-ck-l">${esc(t('machines.comp.kind'))}</span>
+      <div class="chips" role="group" aria-labelledby="mc-ck-l">
+        <button type="button" class="chip" data-ckind="article" aria-pressed="true">${icon('box')}${esc(t('machines.comp.kindArticle'))}</button>
+        <button type="button" class="chip" data-ckind="machine" aria-pressed="false">${icon('machine')}${esc(t('machines.comp.kindMachine'))}</button>
+        <button type="button" class="chip" data-ckind="free" aria-pressed="false">${icon('edit')}${esc(t('machines.comp.kindFree'))}</button>
+      </div>
+    </div>
+    <div class="field" data-cpick>
+      <label for="mc-cq">${esc(t('machines.comp.search'))}</label>
+      <input type="search" id="mc-cq" placeholder="${esc(t('machines.comp.searchPh'))}" autocomplete="off" enterkeyhint="search">
+      <div class="list" data-cres role="listbox" aria-label="${esc(t('machines.comp.search'))}" style="max-height:260px;overflow:auto;margin-top:6px"></div>
+    </div>
+    <div class="field" data-cfree hidden>
+      <label for="mc-cname">${esc(t('machines.comp.freeName'))} <span aria-hidden="true">*</span></label>
+      <input type="text" id="mc-cname" maxlength="200" placeholder="${esc(t('machines.comp.freeNamePh'))}" autocomplete="off">
+    </div>
+    <div class="field">
+      <label for="mc-cqty">${esc(t('machines.comp.qty'))}</label>
+      <input type="text" id="mc-cqty" inputmode="decimal" value="1" autocomplete="off" style="max-width:140px">
+    </div>
+    <div class="field">
+      <label for="mc-cnote">${esc(t('machines.comp.note'))} <span class="muted">(${esc(t('common.optional'))})</span></label>
+      <input type="text" id="mc-cnote" maxlength="500" placeholder="${esc(t('machines.comp.notePh'))}" autocomplete="off">
+    </div>`;
+  const res = await sheet({
+    title: t('machines.comp.add'),
+    body,
+    onOpen: (el) => {
+      const q = el.querySelector('#mc-cq');
+      const resEl = el.querySelector('[data-cres]');
+      const load = async (k) => {
+        if (pool[k]) return pool[k];
+        resEl.innerHTML = `<p class="small muted" style="margin:6px 0">${esc(t('common.loading'))}</p>`;
+        const rows = k === 'article' ? await safeList(() => api.listArticles({})) : await safeList(() => api.listMachines({}));
+        pool[k] = rows.filter((r) => !r.archived && r.id !== m.id)
+          .map((r) => ({ r, hay: norm(`${r.name} ${r.code} ${r.brand || ''} ${r.model || ''} ${r.category_path || r.category || ''}`) }))
+          .sort((a, b) => String(a.r.name).localeCompare(String(b.r.name), locale()));
+        return pool[k];
+      };
+      const render = async () => {
+        if (kind === 'free') return;
+        const k = kind;
+        const list = await load(k);
+        if (k !== kind || !resEl.isConnected) return;
+        const tm = terms(q.value);
+        const hits = list.filter((x) => !tm.length || tm.every((w) => x.hay.includes(w))).slice(0, 30);
+        if (!hits.length) { resEl.innerHTML = `<p class="small muted" style="margin:6px 0">${esc(t('machines.comp.noResults'))}</p>`; return; }
+        resEl.innerHTML = hits.map(({ r }) => {
+          const on = chosen && chosen.type === k && chosen.row.id === r.id;
+          const used = existing.some((c) => (k === 'article' ? c.article_id : c.machine_id) === r.id);
+          return `<button type="button" class="list-item" role="option" aria-selected="${on}" data-cpick-id="${esc(r.id)}"
+            style="width:100%;text-align:left;cursor:pointer;${on ? 'box-shadow:inset 4px 0 0 var(--primary);background:var(--accent-soft)' : ''}">
+            <div class="li-main"><span class="li-title">${esc(r.name)}</span>
+              <span class="li-sub"><span class="mono">${esc(r.code)}</span>${r.location_path ? ' · ' + esc(r.location_path) : ''}</span></div>
+            <div class="li-end">${on ? icon('check') : used ? `<span class="pill pill-muted">${esc(t('machines.comp.title'))}</span>` : ''}</div>
+          </button>`;
+        }).join('');
+      };
+      el.querySelectorAll('[data-ckind]').forEach((b) => b.addEventListener('click', () => {
+        kind = b.dataset.ckind;
+        el.querySelectorAll('[data-ckind]').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+        el.querySelector('[data-cpick]').hidden = kind === 'free';
+        el.querySelector('[data-cfree]').hidden = kind !== 'free';
+        if (chosen && chosen.type !== kind) chosen = null;
+        if (kind === 'free') el.querySelector('#mc-cname').focus();
+        else { render(); q.focus(); }
+      }));
+      q.addEventListener('input', debounce(render, 120));
+      q.addEventListener('keydown', (e) => { if (e.key === 'Enter') e.preventDefault(); });
+      resEl.addEventListener('click', (e) => {
+        const b = e.target.closest('[data-cpick-id]');
+        if (!b) return;
+        const hit = (pool[kind] || []).find((x) => x.r.id === b.dataset.cpickId);
+        if (hit) { chosen = { type: kind, row: hit.r }; render(); }
+      });
+      render();
+    },
+    actions: [
+      { label: t('btn.cancel'), kind: 'ghost', value: null },
+      {
+        label: t('btn.save'), kind: 'primary', icon: 'check',
+        onClick: async (el) => {
+          const qty = qtyValid(el.querySelector('#mc-cqty').value);
+          if (qty === null) { el.querySelector('#mc-cqty').focus(); throw fail('invalid_qty'); }
+          const note = textOrNull(clean(el.querySelector('#mc-cnote').value));
+          const sort = existing.reduce((mx, c) => Math.max(mx, Number(c.sort) || 0), 0) + 1;
+          const obj = { set_id: m.id, qty, note, sort };
+          if (kind === 'free') {
+            const name = clean(el.querySelector('#mc-cname').value);
+            if (!name) { el.querySelector('#mc-cname').focus(); throw fail('name_required'); }
+            obj.name = name;
+          } else {
+            if (!chosen || chosen.type !== kind) {
+              el.querySelector('#mc-cq').focus();
+              const box = el.querySelector('.sheet-error');
+              box.textContent = t('machines.comp.chooseHint'); box.hidden = false;
+              return false;
+            }
+            if (kind === 'article') obj.article_id = chosen.row.id; else obj.machine_id = chosen.row.id;
+          }
+          return api.saveComponent(obj);
+        },
+      },
+    ],
+  });
+  if (!res) return false;
+  toast(t('machines.comp.saved'));
+  return true;
+}
+async function openComponentEdit(ctx, c) {
+  const res = await sheet({
+    title: t('machines.comp.editTitle', { name: compName(c) }),
+    body: `
+      <div class="field">
+        <label for="mc-ceqty">${esc(t('machines.comp.qty'))}</label>
+        <input type="text" id="mc-ceqty" inputmode="decimal" value="${esc(String(c.qty ?? 1))}" autocomplete="off" style="max-width:140px">
+      </div>
+      <div class="field">
+        <label for="mc-cenote">${esc(t('machines.comp.note'))} <span class="muted">(${esc(t('common.optional'))})</span></label>
+        <input type="text" id="mc-cenote" maxlength="500" value="${esc(c.note || '')}" placeholder="${esc(t('machines.comp.notePh'))}" autocomplete="off">
+      </div>`,
+    actions: [
+      { label: t('btn.cancel'), kind: 'ghost', value: null },
+      {
+        label: t('btn.save'), kind: 'primary', icon: 'check',
+        onClick: async (el) => {
+          const qty = qtyValid(el.querySelector('#mc-ceqty').value);
+          if (qty === null) { el.querySelector('#mc-ceqty').focus(); throw fail('invalid_qty'); }
+          return ctx.api.saveComponent({ id: c.id, qty, note: textOrNull(clean(el.querySelector('#mc-cenote').value)) });
+        },
+      },
+    ],
+  });
+  if (!res) return false;
+  toast(t('machines.comp.saved'));
+  return true;
+}
+async function removeComponent(ctx, c) {
+  const ok = await confirmSheet(t('machines.comp.removeQ'), t('machines.comp.removeText', { name: compName(c) }), { okLabel: t('machines.comp.remove'), danger: true });
+  if (!ok) return false;
+  try {
+    await ctx.api.deleteComponent(c.id);
+    toast(t('machines.comp.removed'));
+    return true;
+  } catch (err) { toast(errorText(err), 'error'); return false; }
 }
 
 function damageHtml(m, loans) {
@@ -1046,12 +1556,14 @@ function openCheckout(ctx, m, profilesP) {
     <div class="field">
       <label for="mc-co-note">${esc(t('common.note'))} <span class="muted">(${esc(t('common.optional'))})</span></label>
       <textarea id="mc-co-note" rows="2" maxlength="500" placeholder="${esc(t('machines.co.notePh'))}"></textarea>
-    </div>`;
+    </div>
+    ${m.is_set ? setChecklistHtml() : ''}`;
 
   return sheet({
     title: t('machines.checkout'),
     body,
     onOpen: (el) => {
+      if (m.is_set) fillSetChecklist(el, ctx, m);
       const hint = el.querySelector('[data-due-hint]');
       const pick = el.querySelector('#mc-co-pick');
       const update = () => {
@@ -1109,6 +1621,7 @@ function openReturn(ctx, m, mods) {
     <p class="muted" style="margin:0"><b style="color:var(--text)">${esc(m.name)}</b> · ${esc(m.code)}</p>
     ${!mine && m.open_borrower_name ? `<div class="alert">${icon('user')}<span>${esc(t('machines.returnFor', { name: m.open_borrower_name }))}</span></div>` : ''}
     ${m.open_since ? `<p class="small muted" style="margin:0">${esc(t('machines.ret.lentBy', { name: m.open_borrower_name || '–', date: fmtDateTime(m.open_since), elapsed: fmtElapsed(m.open_since) }))}</p>` : ''}
+    ${m.is_set ? setChecklistHtml() : ''}
     <fieldset class="field" style="border:0;padding:0;margin:0;min-width:0">
       <legend class="lbl" style="padding:0;margin-bottom:5px">${esc(t('machines.ret.cond'))}</legend>
       <div class="radio-cards">
@@ -1128,6 +1641,7 @@ function openReturn(ctx, m, mods) {
     title: t('machines.return'),
     body,
     onOpen: (el) => {
+      if (m.is_set) fillSetChecklist(el, ctx, m);
       const lbl = el.querySelector('[data-note-label]');
       const hint = el.querySelector('[data-note-hint]');
       const ta = el.querySelector('#mc-ret-note');
@@ -1307,16 +1821,17 @@ async function machineList(ctx) {
   setTitle(ctx, t('machines.title'));
 
   const saved = ssGet(SS_LIST) || {};
-  const qs = qget(ctx, 'status'), qq = qget(ctx, 'q'), ql = qget(ctx, 'loc');
-  const fromQuery = qs !== null || qq !== null || ql !== null;
+  const qs = qget(ctx, 'status'), qq = qget(ctx, 'q'), ql = qget(ctx, 'loc'), qk = qget(ctx, 'kat');
+  const fromQuery = qs !== null || qq !== null || ql !== null || qk !== null;
   const st = {
     q: fromQuery ? (qq || '') : (saved.q || ''),
     status: normListStatus(fromQuery ? qs : saved.status),
     loc: fromQuery ? (ql || '') : (saved.loc || ''),
+    cat: fromQuery ? (qk || '') : (saved.cat || ''),
     archived: staff && !!saved.archived,
     limit: LIST_PAGE,
   };
-  const persist = () => ssSet(SS_LIST, { q: st.q, status: st.status, loc: st.loc, archived: st.archived });
+  const persist = () => ssSet(SS_LIST, { q: st.q, status: st.status, loc: st.loc, cat: st.cat, archived: st.archived });
   persist();
 
   root.innerHTML = `
@@ -1337,6 +1852,10 @@ async function machineList(ctx) {
           <label for="ml-loc">${esc(t('common.location'))}</label>
           <select id="ml-loc"><option value="">${esc(t('machines.allLocations'))}</option></select>
         </div>
+        <div class="field" data-catfield hidden>
+          <label for="ml-cat">${esc(t('common.category'))}</label>
+          <select id="ml-cat"></select>
+        </div>
         ${staff ? `<label class="check" style="flex:0 1 auto"><input type="checkbox" id="ml-arch"${st.archived ? ' checked' : ''}> ${esc(t('common.showArchived'))}</label>` : ''}
         <div class="chips" role="group" aria-label="${esc(t('machines.statusFilter'))}">
           ${LIST_FILTERS.map((s) => `<button type="button" class="chip" data-status="${s}" aria-pressed="${s === st.status}">${esc(s === 'all' ? t('btn.all') : s === 'overdue' ? t('machines.overdue') : t('status.' + s))} <span data-n style="opacity:.7"></span></button>`).join('')}
@@ -1354,14 +1873,16 @@ async function machineList(ctx) {
   const resetBtn = root.querySelector('[data-act="reset"]');
   const qInput = root.querySelector('#ml-q');
   const locSel = root.querySelector('#ml-loc');
+  const catSel = root.querySelector('#ml-cat');
   const archBox = root.querySelector('#ml-arch');
   root.addEventListener('click', (e) => { if (e.target.closest('[data-act="retry"]')) ctx.reload(); });
 
-  let machines = [], locs = [];
+  let machines = [], locs = [], cats = [];
   try {
-    [machines, locs] = await Promise.all([
+    [machines, locs, cats] = await Promise.all([
       api.listMachines({ includeArchived: staff }),
       api.listLocations({}).catch(() => []),
+      safeList(() => api.listCategories({})),
     ]);
   } catch (err) {
     if (!root.isConnected) return;
@@ -1376,9 +1897,16 @@ async function machineList(ctx) {
   locSel.insertAdjacentHTML('beforeend', locs.map((l) => `<option value="${esc(l.id)}">${esc(l.path || l.name)}</option>`).join(''));
   if (st.loc && !locs.some((l) => l.id === st.loc)) st.loc = '';
   locSel.value = st.loc;
+  if (st.cat && !cats.some((c) => c.id === st.cat)) st.cat = '';
+  if (cats.length) {
+    catSel.innerHTML = categoryOptionsHtml(cats, st.cat || null, { emptyLabel: t('machines.allCategories') });
+    catSel.value = st.cat;
+    root.querySelector('[data-catfield]').hidden = false;
+  }
 
   const hay = new Map(machines.map((m) => [m.id, norm([
-    m.name, m.code, m.brand, m.model, m.serial_no, m.inventory_no, m.category, m.location_path, m.open_borrower_name,
+    m.name, m.code, m.brand, m.model, m.serial_no, m.inventory_no, m.category, m.category_path, m.location_path,
+    m.location_code_path, m.open_borrower_name, m.responsible_name,
   ].filter(Boolean).join(' '))]));
 
   const rowHtml = (m) => {
@@ -1394,17 +1922,20 @@ async function machineList(ctx) {
       <div class="li-main">
         <span class="li-title">${esc(m.name)}</span>
         <span class="li-sub">${esc(m.code)}${m.location_path ? ' · ' + esc(m.location_path) : ''}</span>
+        ${catText(m) ? `<span class="li-sub">${esc(catText(m))}</span>` : ''}
         ${loanLine}
       </div>
-      <div class="li-end">${statusPill(m.status)}${od ? `<span class="pill pill-danger">${esc(t('machines.overdue'))}</span>` : ''}${m.archived ? `<span class="pill pill-muted">${esc(t('common.archived'))}</span>` : ''}</div>
+      <div class="li-end">${statusPill(m.status)}${od ? `<span class="pill pill-danger">${esc(t('machines.overdue'))}</span>` : ''}${m.is_set ? `<span class="pill pill-info">${esc(t('machines.set'))}</span>` : ''}${m.archived ? `<span class="pill pill-muted">${esc(t('common.archived'))}</span>` : ''}</div>
     </a>`;
   };
 
   function render() {
     const tm = terms(st.q);
     const locSet = st.loc ? descendants(locs, st.loc) : null;
+    const catSet = st.cat ? categorySubtreeIds(cats, st.cat) : null;
     const base = machines.filter((m) => (st.archived || !m.archived)
       && (!locSet || locSet.has(m.home_location_id))
+      && (!catSet || catSet.has(m.category_id))
       && (!tm.length || tm.every((x) => hay.get(m.id).includes(x))));
     root.querySelectorAll('[data-status]').forEach((b) => {
       const s = b.dataset.status;
@@ -1413,7 +1944,7 @@ async function machineList(ctx) {
     });
     const rows = base.filter((m) => matchListStatus(m, st.status));
     countEl.textContent = countLabel(rows.length);
-    const filtered = !!(st.q || st.loc || st.status !== 'all');
+    const filtered = !!(st.q || st.loc || st.cat || st.status !== 'all');
     resetBtn.hidden = !filtered;
     if (!machines.length) {
       listEl.innerHTML = emptyHtml(t('machines.emptyAll'), staff ? `<a class="btn primary" href="#/maschinen/neu">${icon('plus')}${esc(t('machines.new'))}</a>` : '');
@@ -1434,6 +1965,7 @@ async function machineList(ctx) {
   qInput.addEventListener('input', onSearch);
   qInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); qInput.blur(); } });
   locSel.addEventListener('change', () => { st.loc = locSel.value; st.limit = LIST_PAGE; persist(); render(); });
+  catSel.addEventListener('change', () => { st.cat = catSel.value; st.limit = LIST_PAGE; persist(); render(); });
   if (archBox) archBox.addEventListener('change', () => { st.archived = archBox.checked; st.limit = LIST_PAGE; persist(); render(); });
   root.addEventListener('click', (e) => {
     const chip = e.target.closest('[data-status]');
@@ -1442,8 +1974,8 @@ async function machineList(ctx) {
     if (!b) return;
     if (b.dataset.act === 'more') { st.limit += LIST_PAGE * 2; render(); }
     else if (b.dataset.act === 'reset') {
-      st.q = ''; st.loc = ''; st.status = 'all'; st.limit = LIST_PAGE;
-      qInput.value = ''; locSel.value = '';
+      st.q = ''; st.loc = ''; st.cat = ''; st.status = 'all'; st.limit = LIST_PAGE;
+      qInput.value = ''; locSel.value = ''; catSel.value = '';
       persist(); render();
     }
   });
@@ -1479,12 +2011,14 @@ async function machineForm(ctx, isNew) {
   root.innerHTML = head(code || '') + loadingHtml();
   root.addEventListener('click', (e) => { if (e.target.closest('[data-act="retry"]')) ctx.reload(); });
 
-  let locs, all, m = null;
+  let locs, all, m = null, cats = [], profiles = [];
   try {
-    [locs, all, m] = await Promise.all([
+    [locs, all, m, cats, profiles] = await Promise.all([
       api.listLocations({}),
       api.listMachines({ includeArchived: true }).catch(() => []),
       isNew ? Promise.resolve(null) : api.getMachineByCode(code),
+      safeList(() => api.listCategories({})),
+      safeList(() => api.listProfiles()),
     ]);
   } catch (err) {
     if (!root.isConnected) return;
@@ -1505,6 +2039,13 @@ async function machineForm(ctx, isNew) {
   const locOpts = `<option value="">${esc(t('machines.form.noLocation'))}</option>`
     + (homeId && !locs.some((l) => l.id === homeId) ? `<option value="${esc(homeId)}" selected>${esc(m.location_path || '?')}</option>` : '')
     + locs.map((l) => `<option value="${esc(l.id)}"${l.id === homeId ? ' selected' : ''}>${esc(l.path || l.name)}</option>`).join('');
+  const catId = m && m.category_id ? m.category_id : null;
+  const legacyCat = m && !m.category_id && clean(m.category) ? clean(m.category) : '';
+  const respId = m && m.responsible_id ? m.responsible_id : '';
+  const people = profiles.filter((p) => p.active !== false || p.id === respId);
+  const respOpts = `<option value="">${esc(t('machines.noResponsible'))}</option>`
+    + (respId && !people.some((p) => p.id === respId) ? `<option value="${esc(respId)}" selected>${esc(m.responsible_name || '?')}</option>` : '')
+    + people.map((p) => `<option value="${esc(p.id)}"${p.id === respId ? ' selected' : ''}>${esc(p.full_name || p.email || '–')}</option>`).join('');
 
   root.innerHTML = head(m ? `${m.code} · ${m.name}` : '') + `
     <form class="card form" novalidate autocomplete="off">
@@ -1532,11 +2073,16 @@ async function machineForm(ctx, isNew) {
         <span class="lbl">${esc(t('common.status'))}</span>
         <div>${statusPill(m.status)}</div>
       </div>`}
-      <div class="field">
+      ${cats.length ? `<div class="field">
+        <label for="mf-cat">${esc(t('common.category'))}</label>
+        <select id="mf-cat" name="category_id"${legacyCat ? ' aria-describedby="mf-cat-h"' : ''}>${categoryOptionsHtml(cats, catId)}${catId && !cats.some((c) => c.id === catId)
+          ? `<option value="${esc(catId)}" selected>${esc(m.category_path || m.category || '?')}</option>` : ''}</select>
+        ${legacyCat ? `<span class="hint" id="mf-cat-h">${esc(t('machines.form.categoryLegacy', { text: legacyCat }))}</span>` : ''}
+      </div>` : `<div class="field">
         <label for="mf-cat">${esc(t('common.category'))}</label>
         <input type="text" id="mf-cat" name="category" list="mf-cats" maxlength="100" value="${v('category')}">
         <datalist id="mf-cats">${uniq('category').map((c) => `<option value="${esc(c)}"></option>`).join('')}</datalist>
-      </div>
+      </div>`}
       <div class="field">
         <label for="mf-brand">${esc(t('common.brand'))}</label>
         <input type="text" id="mf-brand" name="brand" list="mf-brands" maxlength="100" value="${v('brand')}">
@@ -1566,6 +2112,20 @@ async function machineForm(ctx, isNew) {
       <div class="field">
         <label for="mf-cnote">${esc(t('machines.form.conditionNote'))}</label>
         <textarea id="mf-cnote" name="condition_note" rows="2" maxlength="1000">${v('condition_note')}</textarea>
+      </div>
+      <div class="field">
+        <label for="mf-resp">${esc(t('machines.responsible'))}</label>
+        <select id="mf-resp" name="responsible_id" aria-describedby="mf-resp-h">${respOpts}</select>
+        <span class="hint" id="mf-resp-h">${esc(t('machines.form.responsibleHint'))}</span>
+      </div>
+      <div class="field">
+        <label for="mf-url">${esc(t('machines.productUrl'))}</label>
+        <input type="url" id="mf-url" name="product_url" maxlength="1000" value="${v('product_url')}" placeholder="${esc(t('machines.form.productUrlPh'))}" inputmode="url" spellcheck="false" autocapitalize="off" aria-describedby="mf-url-h">
+        <span class="hint" id="mf-url-h">${esc(t('machines.form.productUrlHint'))}</span>
+      </div>
+      <div class="field full">
+        <label class="check" style="align-items:flex-start"><input type="checkbox" id="mf-set" name="is_set"${m && m.is_set ? ' checked' : ''} aria-describedby="mf-set-h">
+          <span><b>${esc(t('machines.form.isSet'))}</b><span class="hint" id="mf-set-h" style="display:block">${esc(t('machines.form.isSetHint'))}</span></span></label>
       </div>
       <div class="field full">
         <label for="mf-notes">${esc(t('common.notes'))}</label>
@@ -1597,9 +2157,12 @@ async function machineForm(ctx, isNew) {
     const d = formData(form);
     const name = clean(d.name);
     if (!name) { showErr(t('err.name_required'), form.querySelector('#mf-name')); return; }
+    let urlRaw = clean(d.product_url);
+    if (urlRaw && !/^[a-z][a-z0-9+.-]*:/i.test(urlRaw) && /^[\w-]+(\.[\w-]+)+(\/|$)/.test(urlRaw)) urlRaw = 'https://' + urlRaw;   // «bosch.de/…»
+    const productUrl = urlRaw ? safeUrl(urlRaw) : null;
+    if (urlRaw && !productUrl) { showErr(t('machines.form.productUrlInvalid'), form.querySelector('#mf-url')); return; }
     const obj = {
       name,
-      category: textOrNull(clean(d.category)),
       brand: textOrNull(clean(d.brand)),
       model: textOrNull(clean(d.model)),
       serial_no: textOrNull(clean(d.serial_no)),
@@ -1608,7 +2171,20 @@ async function machineForm(ctx, isNew) {
       condition: CONDITIONS.includes(d.condition) ? d.condition : 'ok',
       condition_note: textOrNull(d.condition_note),
       notes: textOrNull(d.notes),
+      responsible_id: d.responsible_id || null,
+      product_url: productUrl ? urlRaw : null,
+      is_set: !!d.is_set,
     };
+    if (cats.length) {
+      // Kategorie aus der Liste: category_id + bisheriges Textfeld (Name), damit Altdaten und Etiketten stimmen
+      const sel = d.category_id || null;
+      const c = sel ? cats.find((x) => x.id === sel) : null;
+      if (sel) { obj.category_id = sel; obj.category = c ? c.name : (m && m.category) || null; }
+      else if (isNew || (m && m.category_id)) { obj.category_id = null; obj.category = null; }
+      // sonst: bisheriger Freitext ohne category_id bleibt unverändert
+    } else {
+      obj.category = textOrNull(clean(d.category));
+    }
     if (isNew) {
       const c = normCode(d.code);
       if (c === false) { showErr(t('machines.form.codeInvalid'), codeInput); return; }

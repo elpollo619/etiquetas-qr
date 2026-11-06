@@ -10,6 +10,7 @@ import {
 } from '../util.js';
 import * as media from '../media.js';
 import * as labels from '../labels.js';
+import { categoryOptionsHtml, categorySubtreeIds, confidencePill, sourceLabel } from '../org-common.js';
 
 // ---------------------------------------------------------------------------
 // Texte
@@ -147,6 +148,24 @@ registerStrings({
     'articles.imp.failed': 'Nicht importiert: {n}',
     'articles.imp.aborted': 'Wegen eines Verbindungsproblems abgebrochen – {n} Einträge wurden nicht importiert. Starte den Import einfach noch einmal: bereits importierte Codes werden übersprungen.',
     'articles.imp.badFile': 'Die Datei konnte nicht gelesen werden. Erwartet wird inventario.json oder eine CSV-Datei mit einer Spalte «Name».',
+    'articles.f.productUrl': 'Herstellerseite',
+    'articles.h.productUrl': 'Nur ein Link zur Produktseite (http/https). Es werden keine fremden Bilder geladen.',
+    'articles.productUrlInvalid': 'Bitte eine vollständige Adresse eingeben, die mit http:// oder https:// beginnt.',
+    'articles.productHint': 'Produktbild: nur Link, Nutzungsrechte nicht geprüft',
+    'articles.categoryLegacy': 'Bisherige Kategorie (Freitext): «{text}». Wähle eine Kategorie aus der Liste – sonst bleibt der Freitext erhalten.',
+    'articles.catLink': 'Alles in dieser Kategorie anzeigen',
+    'articles.codePath': 'Lesbarer Code {code}',
+    'articles.legacyCats': 'Bisherige Kategorien (Freitext)',
+    'articles.det.title': 'Originalfotos aus der Fotoanalyse',
+    'articles.det.intro': 'Aus diesen Fotos wurde der Eintrag erkannt. Foto antippen = gross.',
+    'articles.det.file': 'Datei',
+    'articles.det.place': 'Aufgenommen in',
+    'articles.det.conf': 'Sicherheit',
+    'articles.det.source': 'Herkunft',
+    'articles.det.as': 'Erkannt als',
+    'articles.det.qty': 'Gezählte Menge',
+    'articles.det.qtyUncertain': '(unsicher)',
+    'articles.det.zoom': 'Foto «{name}» vergrössern',
   },
   pt: {
     'articles.title': 'Artigos',
@@ -280,6 +299,24 @@ registerStrings({
     'articles.imp.failed': 'Não importados: {n}',
     'articles.imp.aborted': 'Interrompido por um problema de ligação – {n} registos não foram importados. Volta a iniciar a importação: os códigos já importados são ignorados.',
     'articles.imp.badFile': 'Não foi possível ler o ficheiro. Espera-se o inventario.json ou um ficheiro CSV com uma coluna «Nome».',
+    'articles.f.productUrl': 'Página do fabricante',
+    'articles.h.productUrl': 'Só uma ligação para a página do produto (http/https). Não são carregadas imagens externas.',
+    'articles.productUrlInvalid': 'Introduz um endereço completo que comece por http:// ou https://.',
+    'articles.productHint': 'Imagem do produto: só ligação, direitos de utilização não verificados',
+    'articles.categoryLegacy': 'Categoria anterior (texto livre): «{text}». Escolhe uma categoria da lista – caso contrário, o texto livre mantém-se.',
+    'articles.catLink': 'Ver tudo nesta categoria',
+    'articles.codePath': 'Código legível {code}',
+    'articles.legacyCats': 'Categorias anteriores (texto livre)',
+    'articles.det.title': 'Fotos originais da análise de fotos',
+    'articles.det.intro': 'O registo foi reconhecido a partir destas fotos. Toca na foto para ampliar.',
+    'articles.det.file': 'Ficheiro',
+    'articles.det.place': 'Tirada em',
+    'articles.det.conf': 'Certeza',
+    'articles.det.source': 'Origem',
+    'articles.det.as': 'Reconhecido como',
+    'articles.det.qty': 'Quantidade contada',
+    'articles.det.qtyUncertain': '(incerta)',
+    'articles.det.zoom': 'Ampliar a foto «{name}»',
   },
   es: {
     'articles.title': 'Artículos',
@@ -413,6 +450,24 @@ registerStrings({
     'articles.imp.failed': 'No importados: {n}',
     'articles.imp.aborted': 'Interrumpido por un problema de conexión: {n} registros no se han importado. Vuelve a iniciar la importación; los códigos ya importados se omiten.',
     'articles.imp.badFile': 'No se ha podido leer el archivo. Se espera inventario.json o un archivo CSV con una columna «Nombre».',
+    'articles.f.productUrl': 'Página del fabricante',
+    'articles.h.productUrl': 'Solo un enlace a la página del producto (http/https). No se cargan imágenes externas.',
+    'articles.productUrlInvalid': 'Introduce una dirección completa que empiece por http:// o https://.',
+    'articles.productHint': 'Imagen del producto: solo enlace, derechos de uso no comprobados',
+    'articles.categoryLegacy': 'Categoría anterior (texto libre): «{text}». Elige una categoría de la lista; si no, se conserva el texto libre.',
+    'articles.catLink': 'Ver todo en esta categoría',
+    'articles.codePath': 'Código legible {code}',
+    'articles.legacyCats': 'Categorías anteriores (texto libre)',
+    'articles.det.title': 'Fotos originales del análisis de fotos',
+    'articles.det.intro': 'La entrada se reconoció a partir de estas fotos. Toca la foto para ampliarla.',
+    'articles.det.file': 'Archivo',
+    'articles.det.place': 'Tomada en',
+    'articles.det.conf': 'Seguridad',
+    'articles.det.source': 'Origen',
+    'articles.det.as': 'Reconocido como',
+    'articles.det.qty': 'Cantidad contada',
+    'articles.det.qtyUncertain': '(incierta)',
+    'articles.det.zoom': 'Ampliar la foto «{name}»',
   },
 });
 
@@ -514,6 +569,90 @@ function mountMedia(container, opts) {
   } catch (e) { /* Fotos sind nicht kritisch */ }
 }
 
+// ---------------------------------------------------------------------------
+// Erweiterung «Lager organisieren»: Kategorie, Herstellerseite, Originalfotos
+// ---------------------------------------------------------------------------
+async function safeList(fn) {
+  try { const r = await fn(); return Array.isArray(r) ? r : []; } catch (e) { return []; }
+}
+// Nur http/https als Link zulassen (Daten können aus einem Import stammen)
+function safeUrl(v) {
+  const s = String(v ?? '').trim();
+  if (!s || /\s/.test(s)) return null;
+  try {
+    const u = new URL(s);
+    return (u.protocol === 'http:' || u.protocol === 'https:') && u.hostname ? u.href : null;
+  } catch (e) { return null; }
+}
+// «bosch.de/…» → «https://bosch.de/…»
+function urlInput(v) {
+  const s = clean(v);
+  if (s && !/^[a-z][a-z0-9+.-]*:/i.test(s) && /^[\w-]+(\.[\w-]+)+(\/|$)/.test(s)) return 'https://' + s;
+  return s;
+}
+function productLinkHtml(url) {
+  const href = safeUrl(url);
+  if (!href) return '';
+  let host = href;
+  try { host = new URL(href).hostname.replace(/^www\./, ''); } catch (e) { /* egal */ }
+  return `<a href="${esc(href)}" target="_blank" rel="noopener noreferrer nofollow">${esc(host)}</a>
+    <div class="small muted" style="font-weight:400">${esc(t('articles.productHint'))}</div>`;
+}
+const catText = (a) => a.category_path || a.category || '';
+
+// Originalfotos aus der Fotoanalyse (detection_overview) – zeigt, woher der Eintrag stammt
+function detectionsHtml(list, name, unit) {
+  const seen = new Set();
+  const rows = list.filter((d) => d.photo_path && !seen.has(d.photo_id || d.photo_path) && seen.add(d.photo_id || d.photo_path));
+  if (!rows.length) return '';
+  const kv = (k, v) => (v ? `<dt>${esc(k)}</dt><dd>${v}</dd>` : '');
+  const fig = (d, i) => {
+    const hasPos = d.pos_x !== null && d.pos_x !== undefined && d.pos_y !== null && d.pos_y !== undefined
+      && Number.isFinite(Number(d.pos_x)) && Number.isFinite(Number(d.pos_y));
+    const px = hasPos ? Math.min(100, Math.max(0, Number(d.pos_x) * 100)) : 0;
+    const py = hasPos ? Math.min(100, Math.max(0, Number(d.pos_y) * 100)) : 0;
+    const qty = hasValue(d.quantity) && Number.isFinite(Number(d.quantity))
+      ? `<span style="font-weight:500">${esc(fmtQty(Number(d.quantity), d.unit || unit))}${d.quantity_certain === false ? ` <span class="muted">${esc(t('articles.det.qtyUncertain'))}</span>` : ''}</span>` : '';
+    return `<figure class="card" style="margin:0;padding:8px;display:flex;flex-direction:column;gap:8px">
+      <button type="button" data-detzoom="${i}" aria-label="${esc(t('articles.det.zoom', { name: d.photo_file_name || name }))}"
+        style="position:relative;display:block;width:100%;padding:0;border:0;background:none;cursor:zoom-in;border-radius:10px;overflow:hidden">
+        <img data-path="${esc(d.photo_path)}" alt="" loading="lazy" style="display:block;width:100%;height:auto;min-height:120px;background:var(--surface-3)">
+        ${hasPos ? `<span aria-hidden="true" style="position:absolute;left:${px}%;top:${py}%;width:26px;height:26px;margin:-13px 0 0 -13px;border-radius:50%;border:3px solid #fff;box-shadow:0 0 0 2px var(--danger),0 1px 6px rgba(0,0,0,.5)"></span>` : ''}
+      </button>
+      <figcaption><dl class="kv left small" style="gap:4px 10px">
+        ${kv(t('articles.det.file'), d.photo_file_name ? `<span style="font-weight:500;overflow-wrap:anywhere">${esc(d.photo_file_name)}</span>` : '')}
+        ${kv(t('articles.det.place'), d.photo_location_path ? `<span style="font-weight:500">${esc(d.photo_location_path)}</span>` : '')}
+        ${kv(t('articles.det.conf'), confidencePill(d.confidence))}
+        ${kv(t('articles.det.source'), `<span style="font-weight:500">${esc(sourceLabel(d.source))}</span>`)}
+        ${d.name && d.name !== name ? kv(t('articles.det.as'), `<span style="font-weight:500">${esc(d.name)}</span>`) : ''}
+        ${kv(t('articles.det.qty'), qty)}
+      </dl></figcaption>
+    </figure>`;
+  };
+  return `<p class="hint" style="margin:0 0 8px">${esc(t('articles.det.intro'))}</p>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,240px),1fr));gap:12px">${rows.map(fig).join('')}</div>`;
+}
+function mountDetections(section, api, articleId, name, unit) {
+  if (!section || typeof api.listDetections !== 'function') return;
+  Promise.resolve()
+    .then(() => api.listDetections({ articleId }))
+    .then((rows) => {
+      if (!section.isConnected) return;
+      const html = detectionsHtml(Array.isArray(rows) ? rows : [], name, unit);
+      if (!html) return;   // von Hand erfasst → kein Abschnitt
+      const box = section.querySelector('[data-det-body]');
+      box.innerHTML = html;
+      section.hidden = false;
+      hydrateThumbs(box, api);
+      box.addEventListener('click', (e) => {
+        const b = e.target.closest('[data-detzoom]');
+        const img = b && b.querySelector('img');
+        if (img && img.src) openLightbox(img.src, name);
+      });
+    })
+    .catch(() => { /* Originalfotos sind nicht kritisch */ });
+}
+
 // Alle bearbeitbaren Felder (nie stock, nie code) – damit ein Update nichts leert
 function articlePayload(a) {
   const pick = (k) => (hasValue(a[k]) ? a[k] : null);
@@ -573,16 +712,27 @@ async function listView(ctx) {
   if (queryParam(ctx, 'filter') === 'low' || queryParam(ctx, 'low')) listState.low = true;
   const qq = queryParam(ctx, 'q');
   if (qq) listState.q = String(qq);
+  const qk = queryParam(ctx, 'kat');
+  if (qk) listState.cat = String(qk);
   listState.limit = PAGE_SIZE;
 
   ctx.el.innerHTML = loadingHtml();
-  let rows;
-  try { rows = (await api.listArticles({ includeArchived: staff })) || []; } catch (err) { showError(ctx, err); return; }
+  let rows, catRows;
+  try {
+    [rows, catRows] = await Promise.all([
+      api.listArticles({ includeArchived: staff }),
+      safeList(() => api.listCategories({})),
+    ]);
+    rows = rows || [];
+  } catch (err) { showError(ctx, err); return; }
 
-  const hay = new Map(rows.map((r) => [r, norm([r.name, r.code, r.art_no, r.brand, r.model, r.category,
-    r.location_path, r.size, r.label_text].join(' '))]));
-  const cats = [...new Set(rows.map((r) => clean(r.category)).filter(Boolean))].sort(cmp);
-  if (listState.cat && !cats.includes(listState.cat)) listState.cat = '';
+  const hay = new Map(rows.map((r) => [r, norm([r.name, r.code, r.art_no, r.brand, r.model, r.category, r.category_path,
+    r.location_path, r.location_code_path, r.size, r.label_text].join(' '))]));
+  // Kategorie-Filter: Kategorien aus der Liste (inkl. Unterkategorien) + bisherige Freitexte ohne category_id
+  const cats = [...new Set(rows.filter((r) => !r.category_id).map((r) => clean(r.category)).filter(Boolean))].sort(cmp);
+  const catValues = new Set([...catRows.map((c) => c.id), ...cats.map((c) => 'txt:' + c)]);
+  if (listState.cat && !catValues.has(listState.cat)) listState.cat = '';
+  const catSubtree = () => (listState.cat && !listState.cat.startsWith('txt:') ? categorySubtreeIds(catRows, listState.cat) : null);
   const lowCount = rows.filter((r) => r.low_stock && !r.archived).length;
 
   ctx.el.innerHTML = `<div class="page">
@@ -598,9 +748,11 @@ async function listView(ctx) {
     <div class="filters">
       <div class="searchbar" style="flex:1 1 240px">${icon('search')}<input type="search" data-q value="${esc(listState.q)}"
         aria-label="${esc(t('articles.searchLabel'))}" placeholder="${esc(t('articles.searchPh'))}" autocomplete="off" enterkeyhint="search"></div>
-      ${cats.length ? `<select data-cat aria-label="${esc(t('articles.categoryLabel'))}">
-        <option value="">${esc(t('articles.allCategories'))}</option>
-        ${cats.map((c) => `<option value="${esc(c)}"${c === listState.cat ? ' selected' : ''}>${esc(c)}</option>`).join('')}
+      ${catRows.length || cats.length ? `<select data-cat aria-label="${esc(t('articles.categoryLabel'))}" style="flex:1 1 180px;max-width:100%">
+        ${catRows.length ? categoryOptionsHtml(catRows, listState.cat || null, { emptyLabel: t('articles.allCategories') }) : `<option value="">${esc(t('articles.allCategories'))}</option>`}
+        ${cats.length ? `<optgroup label="${esc(t('articles.legacyCats'))}">
+          ${cats.map((c) => `<option value="${esc('txt:' + c)}"${'txt:' + c === listState.cat ? ' selected' : ''}>${esc(c)}</option>`).join('')}
+        </optgroup>` : ''}
       </select>` : ''}
       ${staff ? `<label class="check"><input type="checkbox" data-arch${listState.archived ? ' checked' : ''}>${esc(t('common.showArchived'))}</label>` : ''}
       <div class="chips" role="group" aria-label="${esc(t('articles.filterLabel'))}">
@@ -616,9 +768,12 @@ async function listView(ctx) {
 
   const filtered = () => {
     const words = norm(listState.q).split(' ').filter(Boolean);
+    const sub = catSubtree();
+    const txt = listState.cat.startsWith('txt:') ? listState.cat.slice(4) : null;
     return rows.filter((r) => {
       if (r.archived && !(staff && listState.archived)) return false;
-      if (listState.cat && clean(r.category) !== listState.cat) return false;
+      if (sub && !sub.has(r.category_id)) return false;
+      if (txt !== null && (r.category_id || clean(r.category) !== txt)) return false;
       if (listState.low && !r.low_stock) return false;
       if (words.length) { const h = hay.get(r); return words.every((w) => h.includes(w)); }
       return true;
@@ -629,6 +784,7 @@ async function listView(ctx) {
       <div class="li-main">
         <span class="li-title">${esc(r.name)}${r.size ? ` <span class="muted">· ${esc(r.size)}</span>` : ''}</span>
         <span class="li-sub">${esc(r.code)}${r.location_path ? ' · ' + esc(r.location_path) : ''}</span>
+        ${catText(r) ? `<span class="li-sub">${esc(catText(r))}</span>` : ''}
       </div>
       <div class="li-end">
         <span class="nowrap" style="font-size:18px;font-weight:750;font-variant-numeric:tabular-nums">${esc(fmtQty(r.stock, r.unit))}</span>
@@ -696,7 +852,7 @@ function exportCsv(list) {
     'articles.f.notes', 'common.archived'].map((k) => t(k));
   const val = (v) => (hasValue(v) ? v : '');
   const data = list.map((r) => [
-    r.code, r.name, val(r.size), val(r.category), val(r.brand), val(r.model), val(r.art_no), val(r.color),
+    r.code, r.name, val(r.size), val(catText(r)), val(r.brand), val(r.model), val(r.art_no), val(r.color),
     val(r.stock), unitLabel(r.unit), val(r.min_stock), r.low_stock ? t('common.yes') : '', val(r.location_path),
     val(r.usage), val(r.description), val(r.label_text), val(r.notes), r.archived ? t('common.yes') : '',
   ]);
@@ -968,10 +1124,14 @@ async function cardView(ctx) {
 
   // Details
   const locText = a.location_path || (loc && (loc.path || loc.name)) || '';
+  const codePath = a.location_code_path || (loc && loc.code_path) || '';
   const locHtml = locText
     ? (loc && loc.code ? `<a href="#/l/${enc(loc.code)}">${esc(locText)}</a>` : esc(locText))
+      + (codePath ? `<div class="small muted mono" style="font-weight:400">${esc(t('articles.codePath', { code: codePath }))}</div>` : '')
     : '<span class="muted">–</span>';
   const kv = [[t('articles.f.location'), locHtml]];
+  const product = productLinkHtml(a.product_url);
+  if (product) kv.push([t('articles.f.productUrl'), product]);
   const brandModel = [a.brand, a.model].map(clean).filter(Boolean).join(' / ');
   if (brandModel) kv.push([t('articles.f.brandModel'), esc(brandModel)]);
   if (a.art_no) kv.push([t('articles.f.artNo'), esc(a.art_no)]);
@@ -995,7 +1155,9 @@ async function cardView(ctx) {
           <h1>${esc(a.name)}</h1>
           <div class="code mono">${esc(a.code)}${a.size ? ' · ' + esc(a.size) : ''}</div>
           <div class="row">
-            ${a.category ? `<span class="pill">${esc(a.category)}</span>` : ''}
+            ${catText(a) ? (a.category_id
+              ? `<a class="pill" href="#/suche?kat=${enc(a.category_id)}" title="${esc(t('articles.catLink'))}" style="white-space:normal">${esc(catText(a))}</a>`
+              : `<span class="pill">${esc(catText(a))}</span>`) : ''}
             ${a.archived ? `<span class="pill pill-muted">${esc(t('common.archived'))}</span>` : ''}
           </div>
         </div>
@@ -1047,9 +1209,15 @@ async function cardView(ctx) {
       <div class="stack" data-mv></div>
     </section>
 
+    <section class="section" aria-labelledby="art-det-h" data-det hidden>
+      <h2 id="art-det-h">${esc(t('articles.det.title'))}</h2>
+      <div data-det-body></div>
+    </section>
+
     <div data-media></div>
   </div>`;
   const root = ctx.el.firstElementChild;
+  mountDetections(root.querySelector('[data-det]'), api, a.id, a.name, a.unit);
 
   // Hero: Foto (antippen = gross) oder QR-Code
   const qrBox = root.querySelector('[data-qr]');
@@ -1339,11 +1507,13 @@ async function formView(ctx, mode) {
   let found = null;
   let locs = [];
   let all = [];
+  let catRows = [];
   try {
-    [found, locs, all] = await Promise.all([
+    [found, locs, all, catRows] = await Promise.all([
       isNew ? (fromCode ? api.getArticleByCode(fromCode) : Promise.resolve(null)) : api.getArticleByCode(code),
       api.listLocations({ includeArchived: true }),
       api.listArticles({ includeArchived: true }),
+      safeList(() => api.listCategories({})),
     ]);
   } catch (err) { showError(ctx, err); return; }
   if (!isNew && !found) { showNotFound(ctx, code); return; }
@@ -1353,6 +1523,8 @@ async function formView(ctx, mode) {
   const val = (k) => (hasValue(v[k]) ? String(v[k]) : '');
 
   const cats = [...new Set((all || []).map((r) => clean(r.category)).filter(Boolean))].sort(cmp);
+  const catId = v.category_id || null;
+  const legacyCat = !catId && clean(v.category) ? clean(v.category) : '';
   const curLoc = v.location_id || '';
   const locOptions = (locs || []).filter((l) => !l.archived || l.id === curLoc)
     .sort((x, y) => cmp(x.path || x.name, y.path || y.name));
@@ -1387,12 +1559,17 @@ async function formView(ctx, mode) {
       ${isNew ? field('stock', t('articles.f.initialStock'), {
         hint: t('articles.h.initialStock'), value: '0', attrs: `inputmode="${isDec(unit) ? 'decimal' : 'numeric'}" autocomplete="off"`,
       }) : ''}
-      <div class="field">
+      ${catRows.length ? `<div class="field">
+        <label for="af-category">${esc(t('articles.f.category'))}</label>
+        <select id="af-category" name="category_id"${legacyCat ? ' aria-describedby="af-category-h"' : ''}>${categoryOptionsHtml(catRows, catId)}${catId && !catRows.some((c) => c.id === catId)
+          ? `<option value="${esc(catId)}" selected>${esc(catText(v) || '?')}</option>` : ''}</select>
+        ${legacyCat ? `<div class="hint" id="af-category-h">${esc(t('articles.categoryLegacy', { text: legacyCat }))}</div>` : ''}
+      </div>` : `<div class="field">
         <label for="af-category">${esc(t('articles.f.category'))}</label>
         <input id="af-category" name="category" type="text" list="af-cats" maxlength="100" autocomplete="off" value="${esc(val('category'))}" aria-describedby="af-category-h">
         <datalist id="af-cats">${cats.map((c) => `<option value="${esc(c)}"></option>`).join('')}</datalist>
         <div class="hint" id="af-category-h">${esc(t('articles.h.category'))}</div>
-      </div>
+      </div>`}
       <div class="field">
         <label for="af-unit">${esc(t('articles.f.unit'))}</label>
         <select id="af-unit" name="unit">${units.map((u) => `<option value="${esc(u)}"${u === unit ? ' selected' : ''}>${esc(unitLabel(u))}</option>`).join('')}</select>
@@ -1410,6 +1587,8 @@ async function formView(ctx, mode) {
       ${field('art_no', t('articles.f.artNo'), { attrs: 'maxlength="100" autocomplete="off"' })}
       ${field('size', t('articles.f.size'), { attrs: 'maxlength="100"' })}
       ${field('color', t('articles.f.color'), { attrs: 'maxlength="100"' })}
+      ${field('product_url', t('articles.f.productUrl'), { type: 'url', full: true, hint: t('articles.h.productUrl'),
+        attrs: 'maxlength="1000" inputmode="url" spellcheck="false" autocapitalize="off" autocomplete="off" placeholder="https://…"' })}
       ${field('label_text', t('articles.f.labelText'), { full: true, hint: t('articles.h.labelText'), attrs: 'maxlength="120"' })}
       ${field('description', t('articles.f.description'), { type: 'textarea', full: true })}
       ${field('usage', t('articles.f.usage'), { type: 'textarea', full: true })}
@@ -1449,11 +1628,13 @@ async function formView(ctx, mode) {
       if (minStock === null || minStock < 0) { fail(t('err.invalid_qty'), 'min_stock'); return; }
       minStock = round3(minStock);
     }
+    const urlRaw = urlInput(d.product_url);
+    if (urlRaw && !safeUrl(urlRaw)) { fail(t('articles.productUrlInvalid'), 'product_url'); return; }
     const obj = {
       name,
       description: multi(d.description),
       art_no: nullIfEmpty(d.art_no),
-      category: nullIfEmpty(d.category),
+      product_url: urlRaw || null,
       brand: nullIfEmpty(d.brand),
       model: nullIfEmpty(d.model),
       size: nullIfEmpty(d.size),
@@ -1465,6 +1646,17 @@ async function formView(ctx, mode) {
       location_id: d.location_id || null,
       notes: multi(d.notes),
     };
+    if (catRows.length) {
+      // Kategorie aus der Liste: category_id + bisheriges Textfeld (Name), damit Altdaten und Etiketten stimmen
+      const sel = d.category_id || null;
+      const c = sel ? catRows.find((x) => x.id === sel) : null;
+      if (sel) { obj.category_id = sel; obj.category = c ? c.name : (v.category || null); }
+      else if (isNew && legacyCat) obj.category = legacyCat;          // Duplikat einer Vorlage mit Freitext
+      else if (isNew || (art && art.category_id)) { obj.category_id = null; obj.category = null; }
+      // sonst: bisheriger Freitext ohne category_id bleibt unverändert
+    } else {
+      obj.category = nullIfEmpty(d.category);
+    }
     if (isNew) {
       const c = clean(d.code).toUpperCase().replace(/\s+/g, '');
       if (c) obj.code = c;

@@ -51,10 +51,21 @@ enlace y la app le pide que elija su contraseña.
 
 ## Actualizar la base de datos
 Si cambia `supabase/schema.sql`: SQL Editor → New query → pegar todo → **Run** (aviso de «destructive operations» →
-«Run query»). Es seguro repetirlo: no borra datos.
+«Run query»). Es seguro repetirlo: no borra datos. La ampliación «Lager organisieren» (noviembre 2026) solo añade tablas
+y columnas; está probada contra la versión anterior con datos (`tests/org.test.mjs`).
+
+## Lager organisieren: fotos y análisis
+1. **Lager organisieren** → crear los espacios (Büro, Werkstatt, Keller …) → **Fotos importieren** (fotos, carpeta, ZIP o cámara).
+2. El análisis de imágenes **no** corre dentro de la app (no hay servicio de IA conectado). Lo hace Claude a partir de los
+   archivos originales y entrega un archivo `…-Fotoanalyse.json`.
+3. **Fotos importieren → KI-Ergebnis importieren**: elegir ese archivo. Se asigna por la huella SHA-256 de cada foto;
+   repetir la importación no duplica nada. Fotos aún no importadas aparecen como «nicht zugeordnet».
+4. **KI-Erkennung prüfen**: confirmar, corregir, fusionar o dejar para más tarde. Solo lo confirmado pasa al inventario.
+Concepto completo: [ORGANIZACION.md](ORGANIZACION.md).
 
 ## Pruebas automáticas (para desarrolladores)
-`cd tests && npm install && npm test` (base de datos, PGlite) · `node --test tests/api-demo.test.mjs` (capa de datos).
+`cd tests && npm install && npm test` (base de datos con PGlite, incl. migración desde la versión anterior) ·
+`node --test tests/api-demo.test.mjs tests/api-demo-org.test.mjs` (capa de datos del modo demo).
 
 ## Límites del plan gratuito de Supabase
 500 MB de base de datos, 1 GB de archivos (las fotos se reducen a 1600 px), pocos correos por hora con el servidor de

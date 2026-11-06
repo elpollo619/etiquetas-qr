@@ -1,9 +1,11 @@
 // Demo-Modus: dieselbe API wie api-supabase.js (Vertrag: docs/ARCHITECTURE.md), Daten nur in diesem Browser
 // (localStorage, Schlüssel «lgr-demo:v1»; ohne localStorage im Speicher).
 // Regeln, Rechte und Fehlercodes entsprechen den Funktionen und Triggern in supabase/schema.sql.
+// «Lager organisieren» (Kategorien, Fotos, KI-Import, Prüfung, Aufgaben, Bereiche, Sets): js/api-demo-org.js.
+import { installOrgDemo, upgradeDb, seedCategories, orgViewIndex, orgInUse, orgAfterDelete } from './api-demo-org.js';
 
-export const STORAGE_KEY = 'lgr-demo:v1';
-const VERSION = 1;
+export const STORAGE_KEY = 'lgr-demo:v1';   // Schlüssel bleibt; der Datenstand trägt seine eigene Version
+const VERSION = 2;                          // 2 = «Lager organisieren» (Version 1 wird beim Laden übernommen)
 
 const DEMO_IMAGE_MAX_PX = 800;
 const DEMO_IMAGE_QUALITY = 0.8;
@@ -12,7 +14,8 @@ const DEFAULT_LIMIT = 200;
 
 const ROLES = ['admin', 'lagerverantwortlicher', 'mitarbeiter'];
 const LANGS = ['de', 'pt', 'es'];
-const LOCATION_TYPES = ['lager', 'raum', 'regal', 'fach', 'box', 'behaelter', 'fahrzeug', 'temporaer'];
+const LOCATION_TYPES = ['lager', 'raum', 'bereich', 'regal', 'schrank', 'tablar', 'fach', 'schublade', 'box', 'behaelter',
+  'werkzeugwand', 'halterung', 'arbeitsplatz', 'fahrzeug', 'container', 'temporaer'];
 const MACHINE_STATUS = ['verfuegbar', 'ausgeliehen', 'reserviert', 'wartung', 'defekt', 'verloren'];
 const SETTABLE_STATUS = ['verfuegbar', 'reserviert', 'wartung', 'defekt', 'verloren'];
 const CONDITIONS = ['ok', 'maengel', 'defekt'];
@@ -27,31 +30,36 @@ const AUDIT_TABLE = {
 
 // Spalten wie in schema.sql
 const PROFILE_COLS = ['id', 'full_name', 'email', 'role', 'active', 'lang', 'created_at'];
-const LOCATION_COLS = ['id', 'code', 'name', 'type', 'parent_id', 'notes', 'archived', 'created_by', 'created_at', 'updated_at'];
+const LOCATION_COLS = ['id', 'code', 'name', 'type', 'parent_id', 'notes', 'archived', 'created_by', 'created_at', 'updated_at',
+  'short_code', 'responsible_id', 'organized_at', 'organized_by', 'cover_photo_id'];
 const ARTICLE_COLS = ['id', 'code', 'name', 'description', 'art_no', 'category', 'brand', 'model', 'size', 'color', 'usage',
-  'label_text', 'unit', 'stock', 'min_stock', 'location_id', 'notes', 'archived', 'created_by', 'created_at', 'updated_at'];
+  'label_text', 'unit', 'stock', 'min_stock', 'location_id', 'notes', 'archived', 'created_by', 'created_at', 'updated_at',
+  'category_id', 'product_url'];
 const MACHINE_COLS = ['id', 'code', 'name', 'category', 'brand', 'model', 'serial_no', 'inventory_no', 'home_location_id',
-  'status', 'condition', 'condition_note', 'notes', 'archived', 'created_by', 'created_at', 'updated_at'];
+  'status', 'condition', 'condition_note', 'notes', 'archived', 'created_by', 'created_at', 'updated_at',
+  'category_id', 'responsible_id', 'is_set', 'product_url'];
 const LOAN_COLS = ['id', 'machine_id', 'borrower_id', 'checked_out_at', 'due_at', 'checkout_note', 'returned_at', 'returned_by',
   'return_condition', 'return_note', 'checkout_request', 'return_request', 'corrected', 'created_by'];
 const MOVEMENT_COLS = ['id', 'article_id', 'type', 'qty', 'stock_before', 'stock_after', 'from_location_id', 'to_location_id',
   'user_id', 'note', 'request_id', 'created_at'];
 
 // Beschreibbare Spalten (wie GRANTs in schema.sql). Bestand/Status nie per Update.
-const LOCATION_INSERT = ['code', 'name', 'type', 'parent_id', 'notes', 'archived'];
-const LOCATION_UPDATE = ['name', 'type', 'parent_id', 'notes', 'archived'];
+const LOCATION_INSERT = ['code', 'name', 'type', 'parent_id', 'notes', 'archived', 'short_code', 'responsible_id', 'cover_photo_id'];
+const LOCATION_UPDATE = ['name', 'type', 'parent_id', 'notes', 'archived', 'short_code', 'responsible_id', 'cover_photo_id'];
 const ARTICLE_INSERT = ['code', 'name', 'description', 'art_no', 'category', 'brand', 'model', 'size', 'color', 'usage',
-  'label_text', 'unit', 'stock', 'min_stock', 'location_id', 'notes', 'archived'];
+  'label_text', 'unit', 'stock', 'min_stock', 'location_id', 'notes', 'archived', 'category_id', 'product_url'];
 const ARTICLE_UPDATE = ['name', 'description', 'art_no', 'category', 'brand', 'model', 'size', 'color', 'usage',
-  'label_text', 'unit', 'min_stock', 'location_id', 'notes', 'archived'];
+  'label_text', 'unit', 'min_stock', 'location_id', 'notes', 'archived', 'category_id', 'product_url'];
 const MACHINE_INSERT = ['code', 'name', 'category', 'brand', 'model', 'serial_no', 'inventory_no', 'home_location_id',
-  'status', 'condition', 'condition_note', 'notes', 'archived'];
+  'status', 'condition', 'condition_note', 'notes', 'archived', 'category_id', 'responsible_id', 'is_set', 'product_url'];
 const MACHINE_UPDATE = ['name', 'category', 'brand', 'model', 'serial_no', 'inventory_no', 'home_location_id',
-  'condition', 'condition_note', 'notes', 'archived'];
-const REF_COLS = new Set(['parent_id', 'location_id', 'home_location_id']);
+  'condition', 'condition_note', 'notes', 'archived', 'category_id', 'responsible_id', 'is_set', 'product_url'];
+const REF_COLS = new Set(['parent_id', 'location_id', 'home_location_id', 'category_id', 'responsible_id', 'cover_photo_id']);
 const NUM_COLS = new Set(['stock', 'min_stock']);
-const BOOL_COLS = new Set(['archived']);
+const BOOL_COLS = new Set(['archived', 'is_set']);
 const ENUM_COLS = new Set(['type', 'unit', 'status', 'condition']);
+const SHORT_CODE_RE = /^[A-Z0-9]{1,10}$/;          // locations_short_code_chk
+const URL_RE = /^https?:\/\/[^\s]+$/i;             // machines_/articles_product_url_chk
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DATE_ONLY_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -195,6 +203,8 @@ function emptyDb() {
     profiles: [], locations: [], articles: [], machines: [], loans: [], stock_movements: [],
     attachments: [], files: {},   // files: path → data:-URL
     inventories: [], inventory_counts: [], inventory_machine_checks: [], audit_log: [],
+    // «Lager organisieren»
+    categories: [], photos: [], detections: [], photo_hotspots: [], org_tasks: [], set_components: [],
   };
 }
 
@@ -231,13 +241,18 @@ export function createApi({ LgrError = FallbackLgrError, storage, storageKey = S
     if (db) return db;
     let raw = null;
     try { raw = store ? store.getItem(storageKey) : null; } catch { raw = null; }
+    let upgraded = false;
     if (raw) {
       try {
         const parsed = JSON.parse(raw);
-        if (parsed && parsed.version === VERSION && Array.isArray(parsed.machines)) db = parsed;
+        if (parsed && Array.isArray(parsed.machines)) {
+          // Version 1 (vor «Lager organisieren») übernehmen: neue Tabellen/Spalten ergänzen, Startkategorien anlegen
+          if (parsed.version === 1) { upgradeDb(parsed, nowIso()); parsed.version = VERSION; upgraded = true; }
+          if (parsed.version === VERSION) db = parsed;
+        }
       } catch { /* defekt → neu aufbauen */ }
     }
-    if (!db) { buildSeed(); persist(); }
+    if (!db) { buildSeed(); persist(); } else if (upgraded) persist();
     return db;
   }
   function read(fn) { load(); return clone(fn()); }
@@ -333,7 +348,14 @@ export function createApi({ LgrError = FallbackLgrError, storage, storageKey = S
       if (!has(obj, k)) continue;
       let v = obj[k];
       if (k === 'code') { v = normCode(v); if (!v) continue; }
-      else if (k === 'name') v = v === null ? '' : String(v).trim();
+      else if (k === 'short_code') {   // Grossbuchstaben, ohne Leerzeichen; leer → null
+        v = v === null ? '' : String(v).toUpperCase().replace(/\s+/g, '');
+        if (!v) v = null;
+        else if (!SHORT_CODE_RE.test(v)) throw E('invalid_short_code', v);
+      } else if (k === 'product_url') {
+        v = trimOrNull(v);
+        if (v !== null && !URL_RE.test(v)) throw E('invalid_url');
+      } else if (k === 'name') v = v === null ? '' : String(v).trim();
       else if (BOOL_COLS.has(k)) v = Boolean(v);
       else if (NUM_COLS.has(k)) {
         v = num(v);
@@ -370,6 +392,22 @@ export function createApi({ LgrError = FallbackLgrError, storage, storageKey = S
     const c = normCode(obj.code);
     if (c && c !== row.code) throw E('code_immutable');
   }
+  // Fremdschlüssel der neuen Spalten. Code wie die Fehlerzuordnung von api-supabase.js (nach Constraint-Name:
+  // «location…» → invalid_location, sonst not_found).
+  function assertOrgRefs(table, p) {
+    const fk = table === 'locations' ? 'invalid_location' : 'not_found';
+    if (p.category_id && !db.categories.some((c) => c.id === p.category_id)) throw E('not_found');
+    if (p.responsible_id && !profileOf(p.responsible_id)) throw E(fk);
+    if (p.cover_photo_id && !db.photos.some((ph) => ph.id === p.cover_photo_id)) throw E(fk);
+  }
+  // Kurzcode eindeutig je Ebene (locations_short_code_uniq: coalesce(parent_id, 0) + short_code)
+  function assertShortCodeFree(id, parentId, shortCode) {
+    if (!shortCode) return;
+    const parent = parentId || null;
+    if (db.locations.some((l) => l.id !== id && (l.parent_id || null) === parent && l.short_code === shortCode)) {
+      throw E('duplicate_short_code');
+    }
+  }
 
   // ---- Ansichten (wie die SQL-Views) ----
   function pathIndex() {
@@ -379,14 +417,20 @@ export function createApi({ LgrError = FallbackLgrError, storage, storageKey = S
       if (!byParent.has(k)) byParent.set(k, []);
       byParent.get(k).push(l);
     }
+    // wie location_paths: Pfad, Tiefe, Raum (root_id) und code_path («HL-RG01-FA02», nur wenn jede Ebene einen Kurzcode hat)
     const idx = new Map();
-    const stack = (byParent.get(null) || []).map((l) => ({ l, path: l.name, depth: 0, trail: [l.id] }));
+    const stack = (byParent.get(null) || []).map((l) => ({
+      l, path: l.name, depth: 0, trail: [l.id], code: l.short_code || null, root: l.id,
+    }));
     while (stack.length) {
-      const { l, path, depth, trail } = stack.pop();
-      idx.set(l.id, { path, depth });
+      const { l, path, depth, trail, code, root } = stack.pop();
+      idx.set(l.id, { path, depth, code, root });
       for (const c of byParent.get(l.id) || []) {
         if (trail.includes(c.id)) continue;
-        stack.push({ l: c, path: `${path} / ${c.name}`, depth: depth + 1, trail: [...trail, c.id] });
+        stack.push({
+          l: c, path: `${path} / ${c.name}`, depth: depth + 1, trail: [...trail, c.id],
+          code: code && c.short_code ? `${code}-${c.short_code}` : null, root,
+        });
       }
     }
     return idx;
@@ -419,17 +463,31 @@ export function createApi({ LgrError = FallbackLgrError, storage, storageKey = S
       t: nowMs(),
       path: (id) => (id && paths.has(id) ? paths.get(id).path : null),
       depth: (id) => (id && paths.has(id) ? paths.get(id).depth : null),
+      codePath: (id) => (id && paths.has(id) ? paths.get(id).code : null),
+      rootId: (id) => (id && paths.has(id) ? paths.get(id).root : null),
       name: (id) => (id && names.has(id) ? names.get(id) : null),
       machines, articles, openLoan, lastLoan,
       photo: { article: photoIndex('article'), machine: photoIndex('machine'), location: photoIndex('location') },
+      org: orgViewIndex(db),   // Kategorie-Pfade, Fotos, Foto der Erkennung, Anzahl Set-Komponenten
     };
   }
-  const vLocation = (l, c) => ({ ...pick(l, LOCATION_COLS), path: c.path(l.id), depth: c.depth(l.id), photo_path: c.photo.location(l.id) });
+  function vLocation(l, c) {
+    const cover = c.org.photoPath(l.cover_photo_id);
+    return {
+      ...pick(l, LOCATION_COLS), path: c.path(l.id), depth: c.depth(l.id), code_path: c.codePath(l.id), root_id: c.rootId(l.id),
+      photo_path: cover ?? c.photo.location(l.id),   // Übersichtsfoto, sonst Hauptfoto der Anhänge
+      cover_photo_path: cover,
+      responsible_name: c.name(l.responsible_id),
+      organized_by_name: c.name(l.organized_by),
+    };
+  }
   const vArticle = (a, c) => ({
     ...pick(a, ARTICLE_COLS),
     location_path: c.path(a.location_id),
+    location_code_path: c.codePath(a.location_id),
+    category_path: c.org.categoryPath(a.category_id),
     low_stock: a.min_stock !== null && a.min_stock !== undefined && a.stock <= a.min_stock,
-    photo_path: c.photo.article(a.id),
+    photo_path: c.photo.article(a.id) ?? c.org.detectionPhoto.article(a.id),
   });
   function vMachine(m, c) {
     const o = c.openLoan.get(m.id) || null;
@@ -437,6 +495,10 @@ export function createApi({ LgrError = FallbackLgrError, storage, storageKey = S
     return {
       ...pick(m, MACHINE_COLS),
       location_path: c.path(m.home_location_id),
+      location_code_path: c.codePath(m.home_location_id),
+      category_path: c.org.categoryPath(m.category_id),
+      responsible_name: c.name(m.responsible_id),
+      component_count: c.org.componentCount(m.id),
       open_loan_id: o ? o.id : null,
       open_borrower_id: o ? o.borrower_id : null,
       open_borrower_name: o ? c.name(o.borrower_id) : null,
@@ -449,7 +511,7 @@ export function createApi({ LgrError = FallbackLgrError, storage, storageKey = S
       last_returned_at: l ? l.returned_at : null,
       last_returned_by_name: l ? c.name(l.returned_by) : null,
       last_return_condition: l ? l.return_condition : null,
-      photo_path: c.photo.machine(m.id),
+      photo_path: c.photo.machine(m.id) ?? c.org.detectionPhoto.machine(m.id),   // sonst Originalfoto der Erkennung
     };
   }
   function vLoan(l, c) {
@@ -499,10 +561,15 @@ export function createApi({ LgrError = FallbackLgrError, storage, storageKey = S
       if (!LOCATION_TYPES.includes(type)) throw E('invalid_type');
       const parent = p.parent_id ?? null;
       if (parent && !locExists(parent)) throw E('invalid_location');
+      assertOrgRefs('locations', p);
+      const code = takeCode('locations', 'L-', p.code);
+      assertShortCodeFree(null, parent, p.short_code);
       const t = nowIso();
       const row = {
-        id: uuid(), code: takeCode('locations', 'L-', p.code), name: p.name, type, parent_id: parent,
+        id: uuid(), code, name: p.name, type, parent_id: parent,
         notes: p.notes ?? null, archived: p.archived ?? false, created_by: uid(), created_at: t, updated_at: t,
+        short_code: p.short_code ?? null, responsible_id: p.responsible_id ?? null, organized_at: null, organized_by: null,
+        cover_photo_id: p.cover_photo_id ?? null,
       };
       db.locations.push(row);
       audit('insert', 'locations', row.id, omit(row, ['created_at', 'updated_at']));
@@ -520,6 +587,10 @@ export function createApi({ LgrError = FallbackLgrError, storage, storageKey = S
       if (p.parent_id && !locExists(p.parent_id)) throw E('invalid_location');
       assertNoCycle(row.id, p.parent_id);
     }
+    assertOrgRefs('locations', p);
+    if (has(p, 'short_code') || has(p, 'parent_id')) {
+      assertShortCodeFree(row.id, has(p, 'parent_id') ? p.parent_id : row.parent_id, has(p, 'short_code') ? p.short_code : row.short_code);
+    }
     const diff = applyPatch(row, p);
     row.updated_at = nowIso();
     if (Object.keys(diff).length) audit('update', 'locations', row.id, diff);
@@ -533,6 +604,7 @@ export function createApi({ LgrError = FallbackLgrError, storage, storageKey = S
       validateSave(p, true, 'INV-');
       if (!isStaff()) throw E('not_authorized');
       if (p.location_id && !locExists(p.location_id)) throw E('invalid_location');
+      assertOrgRefs('articles', p);
       const t = nowIso();
       const row = { id: uuid(), code: takeCode('articles', 'INV-', p.code) };
       for (const k of ARTICLE_INSERT) if (k !== 'code') row[k] = p[k] ?? null;
@@ -558,6 +630,7 @@ export function createApi({ LgrError = FallbackLgrError, storage, storageKey = S
     if (!row) throw E('not_found');
     if (!isStaff()) throw E('not_authorized');
     if (p.location_id && !locExists(p.location_id)) throw E('invalid_location');
+    assertOrgRefs('articles', p);
     const diff = applyPatch(row, p);
     row.updated_at = nowIso();
     if (Object.keys(diff).length) audit('update', 'articles', row.id, diff);
@@ -575,10 +648,13 @@ export function createApi({ LgrError = FallbackLgrError, storage, storageKey = S
       const condition = p.condition ?? 'ok';
       if (!CONDITIONS.includes(condition)) throw E('invalid_condition');
       if (p.home_location_id && !locExists(p.home_location_id)) throw E('invalid_location');
+      assertOrgRefs('machines', p);
       const t = nowIso();
       const row = { id: uuid(), code: takeCode('machines', 'M-', p.code) };
       for (const k of MACHINE_INSERT) if (k !== 'code') row[k] = p[k] ?? null;
-      Object.assign(row, { status, condition, archived: p.archived ?? false, created_by: uid(), created_at: t, updated_at: t });
+      Object.assign(row, {
+        status, condition, archived: p.archived ?? false, is_set: p.is_set ?? false, created_by: uid(), created_at: t, updated_at: t,
+      });
       db.machines.push(row);
       audit('insert', 'machines', row.id, omit(row, ['created_at', 'updated_at']));
       return row.id;
@@ -592,6 +668,7 @@ export function createApi({ LgrError = FallbackLgrError, storage, storageKey = S
     if (!isStaff()) throw E('not_authorized');
     if (has(p, 'condition') && !CONDITIONS.includes(p.condition)) throw E('invalid_condition');
     if (p.home_location_id && !locExists(p.home_location_id)) throw E('invalid_location');
+    assertOrgRefs('machines', p);
     const diff = applyPatch(row, p);
     row.updated_at = nowIso();
     if (Object.keys(diff).length) audit('update', 'machines', row.id, diff);
@@ -818,13 +895,16 @@ export function createApi({ LgrError = FallbackLgrError, storage, storageKey = S
   }
 
   // ---- Inventur ----
-  function coreCreateInventory({ name, note } = {}) {
+  function coreCreateInventory({ name, note, location_id } = {}) {
     const n = trimOrNull(name);
     if (!n) throw E('name_required');
+    const loc = location_id ? String(location_id) : null;   // Inventur nur für einen Raum/Lagerort (optional)
+    if (loc && !isUuid(loc)) throw E('invalid_location');
     if (!isStaff()) throw E('not_authorized');
+    if (loc && !locExists(loc)) throw E('invalid_location');
     const inv = {
       id: uuid(), name: n, status: 'offen', note: trimOrNull(note), started_by: uid(), started_at: nowIso(),
-      closed_by: null, closed_at: null, applied: false,
+      closed_by: null, closed_at: null, applied: false, location_id: loc,
     };
     db.inventories.push(inv);
     return inv;
@@ -905,6 +985,8 @@ export function createApi({ LgrError = FallbackLgrError, storage, storageKey = S
     const real = nowFn();
     const base = new Date(real);
     const D = (d, h, mi = 0) => new Date(base.getFullYear(), base.getMonth(), base.getDate() + d, h, mi, 0, 0).getTime();
+    // Startkategorien wie im SQL-Seed (beim Einrichten der Datenbank, vor dem ersten Konto). Keine Fotos/Erkennungen/Aufgaben.
+    seedCategories(db, iso(D(-46, 17, 0)), uuid);
     const U = DEMO_USER_IDS;
     const R = {};
     const ev = [];
@@ -1207,11 +1289,15 @@ export function createApi({ LgrError = FallbackLgrError, storage, storageKey = S
     async getLocationByCode(code) { return read(() => getView('location', 'code', code)); },
     async saveLocation(obj) { return mutate(() => getView('location', 'id', coreSaveLocation(obj))); },
     async deleteLocation(id) {
-      return mutate(() => { coreDelete('locations', 'location', id, (l) =>
-        db.locations.some((x) => x.parent_id === l.id)
-        || db.articles.some((a) => a.location_id === l.id)
-        || db.machines.some((m) => m.home_location_id === l.id)
-        || db.stock_movements.some((mv) => mv.from_location_id === l.id || mv.to_location_id === l.id)); });
+      return mutate(() => {
+        coreDelete('locations', 'location', id, (l) =>
+          db.locations.some((x) => x.parent_id === l.id)
+          || db.articles.some((a) => a.location_id === l.id)
+          || db.machines.some((m) => m.home_location_id === l.id)
+          || db.stock_movements.some((mv) => mv.from_location_id === l.id || mv.to_location_id === l.id)
+          || orgInUse(db, 'locations', l.id));
+        orgAfterDelete(db, 'locations', id, audit);
+      });
     },
 
     // ---- Maschinen ----
@@ -1226,8 +1312,12 @@ export function createApi({ LgrError = FallbackLgrError, storage, storageKey = S
     async getMachineByCode(code) { return read(() => getView('machine', 'code', code)); },
     async saveMachine(obj) { return mutate(() => getView('machine', 'id', coreSaveMachine(obj))); },
     async deleteMachine(id) {
-      return mutate(() => { coreDelete('machines', 'machine', id, (m) =>
-        db.loans.some((l) => l.machine_id === m.id) || db.inventory_machine_checks.some((c) => c.machine_id === m.id)); });
+      return mutate(() => {
+        coreDelete('machines', 'machine', id, (m) =>
+          db.loans.some((l) => l.machine_id === m.id) || db.inventory_machine_checks.some((c) => c.machine_id === m.id)
+          || orgInUse(db, 'machines', m.id));
+        orgAfterDelete(db, 'machines', id, audit);
+      });
     },
     async checkoutMachine(id, opts) { return mutate(() => pick(coreCheckout(id, opts || {}), LOAN_COLS)); },
     async returnMachine(id, opts) { return mutate(() => pick(coreReturn(id, opts || {}), LOAN_COLS)); },
@@ -1265,8 +1355,12 @@ export function createApi({ LgrError = FallbackLgrError, storage, storageKey = S
     async getArticleByCode(code) { return read(() => getView('article', 'code', code)); },
     async saveArticle(obj) { return mutate(() => getView('article', 'id', coreSaveArticle(obj))); },
     async deleteArticle(id) {
-      return mutate(() => { coreDelete('articles', 'article', id, (a) =>
-        db.stock_movements.some((mv) => mv.article_id === a.id) || db.inventory_counts.some((c) => c.article_id === a.id)); });
+      return mutate(() => {
+        coreDelete('articles', 'article', id, (a) =>
+          db.stock_movements.some((mv) => mv.article_id === a.id) || db.inventory_counts.some((c) => c.article_id === a.id)
+          || orgInUse(db, 'articles', a.id));
+        orgAfterDelete(db, 'articles', id, audit);
+      });
     },
     async moveStock(articleId, opts) { return mutate(() => pick(coreMoveStock(articleId, opts || {}), MOVEMENT_COLS)); },
     async listMovements({ articleId, userId, limit } = {}) {
@@ -1388,6 +1482,17 @@ export function createApi({ LgrError = FallbackLgrError, storage, storageKey = S
       });
     },
   };
+
+  // «Lager organisieren» (js/api-demo-org.js) mit Zugriff auf die Interna dieser Fabrik
+  installOrgDemo(api, {
+    get db() { return db; },   // db wird bei Laden/Rückrollen ersetzt → immer frisch lesen
+    E, load, read, mutate, audit, applyPatch, uid, me, profileOf, isActive, isStaff, isAdmin, canRead, nowIso, nowMs,
+    viewCtx, vLocation, vMachine, vArticle, coreSaveLocation, coreSaveArticle, coreSaveMachine,
+    resizeImage, blobToDataUrl,
+    util: { uuid, trimOrNull, num, clone, pick, omit, has, isUuid, cmp, sortRows, ms },
+    cols: { LOCATION_COLS, ARTICLE_COLS, MACHINE_COLS },
+    limits: { imageMaxPx: DEMO_IMAGE_MAX_PX, imageQuality: DEMO_IMAGE_QUALITY, maxFileBytes: DEMO_MAX_FILE_BYTES },
+  });
 
   // Für Tests: Fehler beim Aufbau der Demodaten
   Object.defineProperty(api, '_seedErrors', { get: () => { load(); return seedErrors.slice(); }, enumerable: false });
