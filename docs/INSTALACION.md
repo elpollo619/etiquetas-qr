@@ -23,6 +23,19 @@ Si ya te habías registrado antes, en su lugar:
 `update public.profiles set role = 'admin', active = true where email = 'tu-correo@ejemplo.com';`
 
 ## Empleados
+**Invitados (activación automática).** Los correos de la lista `public.invites` quedan activos con su rol en cuanto
+la persona se registra y confirma su correo; cada uno elige su propia contraseña (nadie más la conoce). Ya están
+invitados los 10 correos de `@reto-amonn.ch` (reto = Administrator, el resto = Mitarbeiter). Para invitar a más
+personas (SQL Editor):
+
+```sql
+insert into public.invites (email, role) values ('nombre@reto-amonn.ch', 'mitarbeiter');   -- o 'lagerverantwortlicher' / 'admin'
+```
+
+También se puede usar Supabase → Authentication → Users → **Invite user**: la persona recibe un correo, abre el
+enlace y la app le pide que elija su contraseña.
+
+**Sin invitación:**
 1. Abren la app (o escanean cualquier QR), pulsan **Konto erstellen**, confirman el correo.
 2. Quedan «wartet auf Freigabe». En **Mitarbeiter** los apruebas y eliges el rol:
    - **Mitarbeiter**: retirar/devolver máquinas, retirar/añadir material, contar en inventarios.

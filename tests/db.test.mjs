@@ -806,3 +806,28 @@ test('anlagen: Hauptfoto und Zeitpunkt setzt der Server; nur Lagerverantwortlich
   const delStaff = await as(U.lv, `delete from public.attachments where id = $1 returning id`, [p2.id]);
   assert.equal(delStaff.rows.length, 1);
 });
+
+test('einladungen: eingeladene E-Mail ist nach Bestätigung sofort aktiv mit ihrer Rolle', async () => {
+  // nur Admins sehen/ändern die Freigabeliste
+  await fails(as(U.lv, `insert into public.invites (email, role) values ('x@firma.ch', 'admin')`), RLS);
+  assert.equal((await as(U.a, `select * from public.invites`)).rows.length, 0);
+  await fails(asAnon(`select * from public.invites`), DENIED);
+  await as(U.admin, `insert into public.invites (email, role) values ('neu.lager@firma.ch', 'lagerverantwortlicher'), ('chef2@firma.ch', 'admin')`);
+  await fails(as(U.admin, `insert into public.invites (email) values ('Gross@Firma.ch')`), /invites_email_check/);
+  assert.equal((await as(U.admin, `select * from public.invites`)).rows.length, 2);
+
+  // bestätigt registriert (z. B. «Add user» mit Auto-Confirm) → sofort aktiv
+  const n = await createUser(randomUUID(), 'Neu.Lager@firma.ch', { full_name: 'Neu Lager' }, true);
+  assert.deepEqual([n.role, n.active], ['lagerverantwortlicher', true]);
+  // unbestätigt → erst nach Bestätigung
+  const cid = randomUUID();
+  const c = await createUser(cid, 'chef2@firma.ch', { full_name: 'Chef Zwei' }, false);
+  assert.deepEqual([c.role, c.active], ['mitarbeiter', false]);
+  await su(`update auth.users set email_confirmed_at = now() where id = $1`, [cid]);
+  const c2 = (await su(`select role, active from public.profiles where id = $1`, [cid])).rows[0];
+  assert.deepEqual([c2.role, c2.active], ['admin', true]);
+  assert.equal((await su(`select count(*)::int as n from public.invites`)).rows[0].n, 0, 'Einladungen verbraucht');
+  // nicht eingeladene Person bleibt wartend
+  const z = await createUser(randomUUID(), 'zufall@example.com', {}, true);
+  assert.deepEqual([z.role, z.active], ['mitarbeiter', false]);
+});

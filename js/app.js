@@ -52,7 +52,7 @@ function matchRoute(path) {
 }
 function parseHash() {
   const h = location.hash || '';
-  if (/access_token=|error_description=|[#&]type=recovery/.test(h)) return { path: '', query: new URLSearchParams() };
+  if (/access_token=|error_description=|[#&]type=(recovery|invite)/.test(h)) return { path: '', query: new URLSearchParams() };
   const raw = h.replace(/^#\/?/, '');
   const qi = raw.indexOf('?');
   const p = qi >= 0 ? raw.slice(0, qi) : raw;
@@ -380,7 +380,8 @@ async function refreshAuth(force = false) {
 async function boot() {
   initLang();
   captureDeepLink();
-  if (/type=recovery/.test(location.hash)) recoveryMode = true;
+  // Passwort-Link oder Einladung aus Supabase («Invite user»): zuerst eigenes Passwort setzen
+  if (/type=(recovery|invite)/.test(location.hash)) recoveryMode = true;
   try {
     await api.init();
   } catch (err) {

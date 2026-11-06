@@ -45,8 +45,19 @@ create table if not exists public.bootstrap_admins (
 );
 alter table public.bootstrap_admins enable row level security;
 
+-- Einladungen (Freigabeliste): Wer sich mit einer dieser E-Mails registriert und sie bestätigt,
+-- ist sofort aktiv – mit der hinterlegten Rolle. Jeder wählt sein eigenes Passwort. Einladung gilt einmal.
+--   insert into public.invites (email, role) values ('name@firma.ch', 'mitarbeiter');
+create table if not exists public.invites (
+  email       text primary key check (email = lower(trim(email)) and email like '%_@_%'),
+  role        text not null default 'mitarbeiter' check (role in ('admin','lagerverantwortlicher','mitarbeiter')),
+  created_at  timestamptz not null default now()
+);
+alter table public.invites enable row level security;
+
 create or replace function public.promote_bootstrap_admin(p_user uuid, p_email text) returns void
 language plpgsql security definer set search_path = public as $$
+declare v_role text;
 begin
   if p_email is null then return; end if;
   if exists (select 1 from public.bootstrap_admins where lower(email) = lower(p_email)) then
@@ -54,6 +65,14 @@ begin
     delete from public.bootstrap_admins where lower(email) = lower(p_email);
     insert into public.audit_log (user_id, action, entity, entity_id, details)
     values (p_user, 'mitarbeiter', 'profiles', p_user, jsonb_build_object('erster_admin', true));
+    return;
+  end if;
+  select role into v_role from public.invites where email = lower(trim(p_email));
+  if found then
+    update public.profiles set role = v_role, active = true where id = p_user;
+    delete from public.invites where email = lower(trim(p_email));
+    insert into public.audit_log (user_id, action, entity, entity_id, details)
+    values (p_user, 'mitarbeiter', 'profiles', p_user, jsonb_build_object('einladung', true, 'rolle', v_role));
   end if;
 end $$;
 
@@ -922,6 +941,8 @@ grant update (name, category, brand, model, serial_no, inventory_no, home_locati
 grant delete on public.attachments to authenticated;
 grant insert (entity, entity_id, kind, path, file_name, mime, size_bytes, note, loan_id) on public.attachments to authenticated;
 revoke all on public.bootstrap_admins from anon, authenticated;
+revoke all on public.invites from anon, authenticated;
+grant select, insert, delete on public.invites to authenticated;   -- nur Admins, siehe RLS
 grant update (note) on public.attachments to authenticated;
 grant insert (name, note) on public.inventories to authenticated;
 
@@ -975,6 +996,13 @@ drop policy if exists attachments_delete on public.attachments;
 -- Löschen nur durch Lagerverantwortliche/Admins (Datei im Storage ebenso), damit nichts verwaist
 create policy attachments_delete on public.attachments for delete to authenticated
   using ((select public.is_staff()));
+
+drop policy if exists invites_admin_read on public.invites;
+create policy invites_admin_read on public.invites for select to authenticated using ((select public.is_admin()));
+drop policy if exists invites_admin_insert on public.invites;
+create policy invites_admin_insert on public.invites for insert to authenticated with check ((select public.is_admin()));
+drop policy if exists invites_admin_delete on public.invites;
+create policy invites_admin_delete on public.invites for delete to authenticated using ((select public.is_admin()));
 
 drop policy if exists inventories_read on public.inventories;
 create policy inventories_read on public.inventories for select to authenticated using ((select public.is_active_user()));
