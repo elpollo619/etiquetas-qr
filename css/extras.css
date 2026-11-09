@@ -118,3 +118,33 @@ button.stat.dash-stat-btn:hover { background: var(--surface-2); }
 #dash-movements { scroll-margin-top: calc(var(--topbar-h) + 12px); }
 .section-head h2[tabindex="-1"]:focus { outline: none; }
 .section-head h2[tabindex="-1"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Verbrauchsmaterial: Bestand gross, Ampel links, Knöpfe gut treffbar */
+.stock-list .stock-row { border-left: 4px solid transparent; }
+.stock-list .stock-row.st-refill { border-left-color: #b87d00; }
+.stock-list .stock-row.st-empty { border-left-color: #c0392b; }
+.stock-list .stock-row .li-main { text-decoration: none; color: inherit; min-width: 0; }
+.stock-end { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.stock-qty { font-size: 18px; font-weight: 750; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.stock-btns { gap: 6px; flex-wrap: nowrap; }
+.stock-btns .btn { min-height: 40px; min-width: 48px; }
+@media (max-width: 560px) {
+  .stock-list .stock-row { flex-wrap: wrap; }
+  .stock-end { flex-direction: row; align-items: center; width: 100%; justify-content: flex-end; }
+}
+
+/* ---- Einkaufsliste ---- */
+.shop-add-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
+.shop-qty { font-weight: 650; color: var(--muted, #555); margin-left: 4px; white-space: nowrap; }
+.shop-btns { display: flex; flex-direction: row; flex-wrap: wrap; gap: 6px; justify-content: flex-end; align-items: center; max-width: 260px; }
+.shop-list .li-title, .shop-list .li-sub { white-space: normal; overflow-wrap: anywhere; }
+.shop-list .shop-row .li-main { text-decoration: none; color: inherit; }
+.shop-row.st-bestellt { border-left: 3px solid var(--info, #2563eb); }
+.shop-row.st-erledigt .li-title, .shop-row.st-verworfen .li-title { text-decoration: line-through; opacity: .75; }
+.shop-list .li-sub em { font-style: normal; color: inherit; }
+details[data-done-sec] > summary { cursor: pointer; list-style: revert; }
+@media (max-width: 560px) {
+  .shop-row { flex-wrap: wrap; }
+  .shop-btns { max-width: none; width: 100%; justify-content: flex-start; padding-left: 0; }
+  .shop-btns .btn { min-height: 40px; }
+}

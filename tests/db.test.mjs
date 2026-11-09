@@ -552,6 +552,79 @@ test('artikel: Korrektur braucht Begründung, Umlagerung ändert Lagerort', asyn
   assert.deepEqual([ao.low_stock, ao.location_path], [true, 'Hauptlager / Regal B / Fach 03']);
 });
 
+test('einkaufsliste: automatisch unter Mindestbestand, einmal je Artikel, Zugang hakt ab, Rechte, Protokoll', async () => {
+  const art = await one(U.lv, `insert into public.articles (name, unit, stock, min_stock, reorder_qty, location_id)
+                               values ('Papier A4', 'Pkg', 10, 4, 5, $1) returning *`, [S.locRegal]);
+  await fails(as(U.lv, `update public.articles set reorder_qty = 0 where id = $1`, [art.id]), /reorder_qty_chk/);
+  const open = async () => (await su(`select * from public.shopping_items where article_id = $1 and status in ('offen','bestellt')`, [art.id])).rows;
+
+  await rpc(U.a, 'stock_move', { p_article: art.id, p_type: 'entnahme', p_qty: 5, p_request: randomUUID() });
+  assert.equal((await open()).length, 0, 'über dem Mindestbestand: nichts');
+  await rpc(U.a, 'stock_move', { p_article: art.id, p_type: 'entnahme', p_qty: 1, p_request: randomUUID() });
+  let o = await open();
+  assert.equal(o.length, 1, 'auf Mindestbestand: automatisch auf der Liste');
+  assert.deepEqual([o[0].name, num(o[0].qty), o[0].unit, o[0].source, o[0].status, o[0].created_by],
+    ['Papier A4', 5, 'Pkg', 'automatisch', 'offen', U.a]);
+  const auditIns = await su(`select count(*)::int n from public.audit_log where entity = 'shopping_items' and entity_id = $1 and action = 'insert'`, [o[0].id]);
+  assert.equal(auditIns.rows[0].n, 1, 'automatischer Eintrag steht im Protokoll');
+
+  await rpc(U.a, 'stock_move', { p_article: art.id, p_type: 'entnahme', p_qty: 1, p_request: randomUUID() });
+  assert.equal((await open()).length, 1, 'weitere Entnahme: kein zweiter Eintrag');
+  await fails(as(U.b, `insert into public.shopping_items (article_id, name) values ($1, '')`, [art.id]), /shopping_items_open_article_uniq/);
+
+  // freier Eintrag (ohne Artikel) von Mitarbeiterin B
+  const free = await one(U.b, `insert into public.shopping_items (name, qty, unit, note) values ('  Kaffeebohnen ', 2, 'kg', '  ') returning *`);
+  assert.deepEqual([free.name, num(free.qty), free.unit, free.note, free.source, free.created_by], ['Kaffeebohnen', 2, 'kg', null, 'manuell', U.b]);
+  await fails(as(U.b, `insert into public.shopping_items (name) values ('   ')`), /name_check/);
+  await fails(as(U.b, `insert into public.shopping_items (name, qty) values ('X', 0)`), /qty_check/);
+  await fails(as(U.b, `insert into public.shopping_items (name, source) values ('X', 'automatisch')`), DENIED);
+  await fails(as(U.a, `update public.shopping_items set source = 'manuell' where id = $1`, [o[0].id]), DENIED);
+  await fails(as(U.a, `update public.shopping_items set article_id = null where id = $1`, [o[0].id]), DENIED);
+
+  // bestellt → Zugang über den Mindestbestand → erledigt (wer hat bestellt, wer hat eingebucht)
+  const b1 = await one(U.a, `update public.shopping_items set status = 'bestellt' where id = $1 returning *`, [o[0].id]);
+  assert.deepEqual([b1.status, b1.ordered_by, b1.done_by], ['bestellt', U.a, null]);
+  await rpc(U.b, 'stock_move', { p_article: art.id, p_type: 'zugang', p_qty: 1, p_request: randomUUID() });
+  assert.equal((await open()).length, 1, 'Zugang bis genau Mindestbestand: bleibt offen');
+  await rpc(U.b, 'stock_move', { p_article: art.id, p_type: 'zugang', p_qty: 5, p_request: randomUUID() });
+  assert.equal((await open()).length, 0);
+  const done = (await su(`select * from public.shopping_items where id = $1`, [o[0].id])).rows[0];
+  assert.deepEqual([done.status, done.ordered_by, done.done_by], ['erledigt', U.a, U.b]);
+  const auditUpd = await su(`select count(*)::int n from public.audit_log where entity = 'shopping_items' and entity_id = $1 and action = 'update'`, [o[0].id]);
+  assert.ok(auditUpd.rows[0].n >= 2, 'Statuswechsel stehen im Protokoll');
+
+  // ohne Nachkaufmenge: bis zum doppelten Mindestbestand; Korrektur löst ebenfalls aus
+  await as(U.lv, `update public.articles set reorder_qty = null where id = $1`, [art.id]);
+  await rpc(U.lv, 'stock_move', { p_article: art.id, p_type: 'korrektur', p_qty: 1, p_request: randomUUID(), p_note: 'gezählt' });
+  o = await open();
+  assert.deepEqual([o.length, num(o[0].qty)], [1, 7]);
+  // Mindestbestand ändern fügt nichts hinzu; archivierte Artikel nie
+  const quiet = await one(U.lv, `insert into public.articles (name, unit, stock, location_id) values ('Toner', 'Stk', 0, $1) returning *`, [S.locRegal]);
+  await as(U.lv, `update public.articles set min_stock = 2 where id = $1`, [quiet.id]);
+  assert.equal((await su(`select count(*)::int n from public.shopping_items where article_id = $1`, [quiet.id])).rows[0].n, 0);
+
+  // Ansicht mit Artikelangaben; Verbrauch der letzten 90 Tage
+  const v = await one(U.b, `select * from public.shopping_overview where id = $1`, [o[0].id]);
+  assert.deepEqual([v.article_code, num(v.article_stock), num(v.article_min_stock), v.article_location_path, v.created_by_name],
+    [art.code, 1, 4, 'Hauptlager / Regal B', 'Lukas Lager']);
+  const c = await one(U.a, `select * from public.article_consumption where article_id = $1`, [art.id]);
+  assert.deepEqual([num(c.used_90d), num(c.takes_90d)], [7, 3]);
+  const stats = await one(U.a, `select shopping_open from public.org_stats`);
+  assert.ok(Number(stats.shopping_open) >= 2);
+
+  // löschen: nur eigener Eintrag oder Lagerverantwortliche; inaktiv sieht nichts
+  const delA = await as(U.a, `delete from public.shopping_items where id = $1`, [free.id]);
+  assert.equal(delA.affectedRows, 0, 'fremder Eintrag: 0 Zeilen');
+  const delB = await as(U.b, `delete from public.shopping_items where id = $1`, [free.id]);
+  assert.equal(delB.affectedRows, 1);
+  const delLv = await as(U.lv, `delete from public.shopping_items where id = $1`, [o[0].id]);
+  assert.equal(delLv.affectedRows, 1);
+  assert.equal((await as(U.x, `select * from public.shopping_items`)).rows.length, 0);
+  await fails(as(U.x, `insert into public.shopping_items (name) values ('X')`), RLS);
+  // Aufräumen: Artikel wieder ohne Mindestbestand, damit spätere Tests unberührt bleiben
+  await as(U.lv, `update public.articles set archived = true where id = any($1)`, [[art.id, quiet.id]]);
+});
+
 // ---------------------------------------------------------------------------------------------------
 //  Korrektur von Ausleihen
 // ---------------------------------------------------------------------------------------------------

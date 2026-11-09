@@ -1,5 +1,5 @@
 // Etiketten mit QR-Code für die Brother QL-800 (300 dpi). Der QR enthält nur den dauerhaften Link mit dem Code.
-import { t, registerStrings } from './i18n.js';
+import { t, registerStrings, fmtQty } from './i18n.js';
 import { esc, sheet, toast, errorText, downloadBlob } from './util.js';
 import { PUBLIC_BASE_URL } from './config.js';
 
@@ -9,7 +9,7 @@ registerStrings({
     'labels.length': 'Länge (mm)', 'labels.copies': 'Kopien pro Etikett', 'labels.flip': 'Um 90° drehen (falls schief/abgeschnitten)',
     'labels.print': 'Drucken / PDF', 'labels.png': 'PNG', 'labels.loc': 'Standort', 'labels.use': 'Verwendung',
     'labels.scan': 'Scannen für Details', 'labels.scanMachine': 'Scannen: ausleihen / zurückgeben',
-    'labels.machine': 'Maschine', 'labels.nr': 'Nr. {code}', 'labels.inv': 'Inv.', 'labels.artNo': 'Art.-Nr.',
+    'labels.machine': 'Maschine', 'labels.nr': 'Nr. {code}', 'labels.inv': 'Inv.', 'labels.artNo': 'Art.-Nr.', 'labels.min': 'Min. Bestand {qty}',
     'labels.qrOk': 'QR gut lesbar ({mm} mm pro Punkt).', 'labels.qrSmall': 'QR sehr klein – grössere Etikette wählen.',
     'labels.printHint': 'Im Druckdialog: Drucker «Brother QL-800», Ränder «Keine», Skalierung 100 %. Für PDF «Als PDF speichern» wählen.',
     'labels.fmt.quer': 'quer', 'labels.fmt.hoch': 'hoch', 'labels.fmt.endlos': 'Endlos, Länge wählbar', 'labels.fmt.small': 'klein', 'labels.fmt.strip': 'Regalstreifen',
@@ -20,7 +20,7 @@ registerStrings({
     'labels.length': 'Comprimento (mm)', 'labels.copies': 'Cópias por etiqueta', 'labels.flip': 'Rodar 90° (se sair torta/cortada)',
     'labels.print': 'Imprimir / PDF', 'labels.png': 'PNG', 'labels.loc': 'Localização', 'labels.use': 'Utilização',
     'labels.scan': 'Ler para ver detalhes', 'labels.scanMachine': 'Ler: levantar / devolver',
-    'labels.machine': 'Máquina', 'labels.nr': 'N.º {code}', 'labels.inv': 'Inv.', 'labels.artNo': 'Ref.',
+    'labels.machine': 'Máquina', 'labels.nr': 'N.º {code}', 'labels.inv': 'Inv.', 'labels.artNo': 'Ref.', 'labels.min': 'Stock mín. {qty}',
     'labels.qrOk': 'QR bem legível ({mm} mm por ponto).', 'labels.qrSmall': 'QR muito pequeno – escolhe uma etiqueta maior.',
     'labels.printHint': 'Na janela de impressão: impressora «Brother QL-800», margens «Nenhuma», escala 100 %. Para PDF escolhe «Guardar como PDF».',
     'labels.fmt.quer': 'horizontal', 'labels.fmt.hoch': 'vertical', 'labels.fmt.endlos': 'contínuo, comprimento à escolha', 'labels.fmt.small': 'pequena', 'labels.fmt.strip': 'tira de prateleira',
@@ -31,7 +31,7 @@ registerStrings({
     'labels.length': 'Largo (mm)', 'labels.copies': 'Copias de cada una', 'labels.flip': 'Girar 90° (si sale torcida o cortada)',
     'labels.print': 'Imprimir / PDF', 'labels.png': 'PNG', 'labels.loc': 'Ubicación', 'labels.use': 'Uso',
     'labels.scan': 'Escanea para ver la ficha', 'labels.scanMachine': 'Escanear: retirar / devolver',
-    'labels.machine': 'Máquina', 'labels.nr': 'N.º {code}', 'labels.inv': 'Inv.', 'labels.artNo': 'N.º art.',
+    'labels.machine': 'Máquina', 'labels.nr': 'N.º {code}', 'labels.inv': 'Inv.', 'labels.artNo': 'N.º art.', 'labels.min': 'Stock mín. {qty}',
     'labels.qrOk': 'QR bien legible ({mm} mm por punto).', 'labels.qrSmall': 'QR muy pequeño: elige una etiqueta más grande.',
     'labels.printHint': 'En la ventana de impresión: impresora «Brother QL-800», márgenes «Ninguno», escala 100 %. Para PDF elige «Guardar como PDF».',
     'labels.fmt.quer': 'horizontal', 'labels.fmt.hoch': 'vertical', 'labels.fmt.endlos': 'continuo, largo a medida', 'labels.fmt.small': 'pequeña', 'labels.fmt.strip': 'tira para estantes',
@@ -162,7 +162,8 @@ export function labelItem(kind, row) {
     kind: 'article', code: row.code, qrText: qrUrl(row.code),
     cat: clean(row.category), title: clean(row.label_text) || clean(row.name), big: clean(row.size),
     loc: clean(row.location_path), use: clean(row.usage),
-    foot: [row.art_no ? `${t('labels.artNo')} ${clean(row.art_no)}` : '', row.code].filter(Boolean).join(' · '),
+    foot: [row.min_stock !== null && row.min_stock !== undefined && row.min_stock !== '' ? t('labels.min', { qty: fmtQty(row.min_stock, row.unit || 'Stk') }) : '',
+      row.art_no ? `${t('labels.artNo')} ${clean(row.art_no)}` : '', row.code].filter(Boolean).join(' · '),
   };
 }
 

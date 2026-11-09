@@ -286,6 +286,32 @@ api.saveFloorPlan({ …, site_id })
 UI: «Lager organisieren» filtert/gruppiert die Räume nach Adresse (?site=<id>|none); Gebäudeplan wählt zuerst die Adresse,
 dann das Stockwerk; Lagerort-Formular und «Raum hinzufügen» haben das Feld «Adresse».
 
+## Verbrauchsmaterial, Einräumen, Einkaufsliste (November 2026)
+- **Verbrauchsmaterial** (`#/verbrauch`, js/views/stock-tools.js): alle Artikel mit Mindestbestand; «−1» (Entnahme) und «Zugang» für
+  alle aktiven Mitarbeiter. Zustand: leer / nachfüllen (Bestand ≤ Mindestbestand, wie `article_overview.low_stock`) / knapp
+  (≤ 1,25 × Mindestbestand) / genug / «noch nicht gezählt» (Bestand 0 + Notiz «Menge noch nicht gezählt»).
+- **Einräumen** (`#/einraeumen?ziel=L-…`, nur Lagerverantwortliche): Ziel scannen/wählen, dann Maschinen (Heimatort) und Artikel
+  (Umlagerung) scannen oder suchen; «Rückgängig» je Bewegung.
+- **Einkaufsliste** (`#/einkauf`, js/views/shopping.js) – bewusst KEIN Einkaufs-/Bestellmodul (keine Lieferanten, Preise,
+  Bestellungen, Rechnungen). Tabelle `shopping_items`: id, article_id (optional), name, qty, unit, note,
+  status `offen|bestellt|erledigt|verworfen`, source `manuell|automatisch`, created_by/at, ordered_by/at, done_by/at.
+  Je Artikel höchstens ein offener Eintrag (Index `shopping_items_open_article_uniq` → Fehler `already_on_list`).
+  - Trigger `article_shopping_sync`: fällt der Bestand (Entnahme, Korrektur, Inventur) auf/unter den Mindestbestand →
+    automatischer Eintrag (Menge = `articles.reorder_qty` «Nachkaufmenge», sonst bis zum doppelten Mindestbestand);
+    steigt er über den Mindestbestand → offene Einträge «erledigt». Mindestbestand setzen allein fügt nichts hinzu
+    (ungezählte Artikel stehen auf 0) – die Liste zeigt dafür «Vorschläge».
+  - Rechte: lesen/eintragen/abhaken alle aktiven; löschen nur eigener Eintrag oder Lagerverantwortliche (UI nutzt «verworfen»).
+  - Ansichten: `shopping_overview` (+ Artikelangaben, Namen), `article_consumption` (Entnahmen der letzten 90 Tage je Artikel →
+    «reicht noch ca. …», Schätzung in js/consumption.js erst ab 2 Entnahmen), `org_stats.shopping_open`.
+```
+api.listShopping({ status: 'open'|'done' })    → shopping_overview (open = offen+bestellt; done = letzte 40)
+api.saveShoppingItem({ id?, article_id?, name?, qty?, unit?, note? }) → Zeile (Name/Einheit vom Artikel, wenn leer)
+api.setShoppingStatus(id, status)              → Zeile
+api.deleteShoppingItem(id)
+api.listConsumption()                          → [{ article_id, used_90d, takes_90d, first_take_at, last_take_at }]
+api.saveArticle({ …, reorder_qty })            Nachkaufmenge (> 0 oder null)
+```
+
 ## Ansichten (js/views/*.js)
 
 Jede Datei:

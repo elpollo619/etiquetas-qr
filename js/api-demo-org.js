@@ -233,7 +233,9 @@ export function completeDb(db) {
     for (const r of Array.isArray(rows) ? rows : []) for (const [k, v] of Object.entries(defs)) if (r[k] === undefined) r[k] = v;
   };
   fill(db.locations, { short_code: null, responsible_id: null, organized_at: null, organized_by: null, cover_photo_id: null, site_id: null });
-  fill(db.articles, { category_id: null, product_url: null });
+  // Einkaufsliste kam ebenfalls ohne neue Version dazu: leere Liste, Artikel ohne Nachkaufmenge
+  if (!Array.isArray(db.shopping_items)) db.shopping_items = [];
+  fill(db.articles, { category_id: null, product_url: null, reorder_qty: null });
   fill(db.machines, { category_id: null, responsible_id: null, is_set: false, product_url: null });
   fill(db.inventories, { location_id: null });
   fill(db.photos, { kind: 'foto' });   // Gebäudeplan: bestehende Bilder sind Fotos
@@ -329,6 +331,7 @@ export function orgAfterDelete(db, table, id, audit) {
     setNull('detections', 'machine_id');
   } else if (table === 'articles') {
     setNull('detections', 'article_id');
+    drop('shopping_items', (s) => s.article_id === id);   // Einkaufsliste: on delete cascade
   }
 }
 
@@ -561,6 +564,7 @@ export function installOrgDemo(api, x) {
       duplicate_groups: [...keyCount.values()].filter((n) => n > 1).length,
       tasks_open: db.org_tasks.filter((x2) => x2.status === 'offen').length,
       movements_7d: db.stock_movements.filter((mv) => ms(mv.created_at) > t - 7 * 24 * 3600 * 1000).length,
+      shopping_open: (db.shopping_items || []).filter((s) => s.status === 'offen' || s.status === 'bestellt').length,
     };
   }
   const ZERO_STATS = () => Object.fromEntries(Object.keys(orgStatsRow()).map((k) => [k, 0]));

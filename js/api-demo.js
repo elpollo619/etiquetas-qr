@@ -2,6 +2,8 @@
 // (localStorage, Schlüssel «lgr-demo:v1»; ohne localStorage im Speicher).
 // Regeln, Rechte und Fehlercodes entsprechen den Funktionen und Triggern in supabase/schema.sql.
 // «Lager organisieren» (Kategorien, Fotos, KI-Import, Prüfung, Aufgaben, Bereiche, Sets, Pläne, Standorte): js/api-demo-org.js.
+// Einkaufsliste (shopping_items, shopping_overview, article_consumption, Trigger article_shopping_sync): hier, weil
+// jede Bestandsänderung (Entnahme, Zugang, Korrektur, Inventur) sie nachführt.
 import { installOrgDemo, upgradeDb, completeDb, seedCategories, orgViewIndex, orgInUse, orgAfterDelete } from './api-demo-org.js';
 
 export const STORAGE_KEY = 'lgr-demo:v1';   // Schlüssel bleibt; der Datenstand trägt seine eigene Version
@@ -34,7 +36,7 @@ const LOCATION_COLS = ['id', 'code', 'name', 'type', 'parent_id', 'notes', 'arch
   'short_code', 'responsible_id', 'organized_at', 'organized_by', 'cover_photo_id', 'site_id'];
 const ARTICLE_COLS = ['id', 'code', 'name', 'description', 'art_no', 'category', 'brand', 'model', 'size', 'color', 'usage',
   'label_text', 'unit', 'stock', 'min_stock', 'location_id', 'notes', 'archived', 'created_by', 'created_at', 'updated_at',
-  'category_id', 'product_url'];
+  'category_id', 'product_url', 'reorder_qty'];
 const MACHINE_COLS = ['id', 'code', 'name', 'category', 'brand', 'model', 'serial_no', 'inventory_no', 'home_location_id',
   'status', 'condition', 'condition_note', 'notes', 'archived', 'created_by', 'created_at', 'updated_at',
   'category_id', 'responsible_id', 'is_set', 'product_url'];
@@ -42,20 +44,26 @@ const LOAN_COLS = ['id', 'machine_id', 'borrower_id', 'checked_out_at', 'due_at'
   'return_condition', 'return_note', 'checkout_request', 'return_request', 'corrected', 'created_by'];
 const MOVEMENT_COLS = ['id', 'article_id', 'type', 'qty', 'stock_before', 'stock_after', 'from_location_id', 'to_location_id',
   'user_id', 'note', 'request_id', 'created_at'];
+const SHOPPING_COLS = ['id', 'article_id', 'name', 'qty', 'unit', 'note', 'status', 'source', 'created_by', 'created_at',
+  'updated_at', 'ordered_by', 'ordered_at', 'done_by', 'done_at'];
+const SHOPPING_STATUS = ['offen', 'bestellt', 'erledigt', 'verworfen'];
+const SHOPPING_OPEN = ['offen', 'bestellt'];          // shopping_items_open_article_uniq: je Artikel höchstens ein solcher Eintrag
+const SHOPPING_DONE_LIMIT = 40;                       // listShopping({ status: 'done' }): die letzten 40
+const CONSUMPTION_MS = 90 * 24 * 3600 * 1000;         // article_consumption: Entnahmen der letzten 90 Tage
 
 // Beschreibbare Spalten (wie GRANTs in schema.sql). Bestand/Status nie per Update.
 const LOCATION_INSERT = ['code', 'name', 'type', 'parent_id', 'notes', 'archived', 'short_code', 'responsible_id', 'cover_photo_id', 'site_id'];
 const LOCATION_UPDATE = ['name', 'type', 'parent_id', 'notes', 'archived', 'short_code', 'responsible_id', 'cover_photo_id', 'site_id'];
 const ARTICLE_INSERT = ['code', 'name', 'description', 'art_no', 'category', 'brand', 'model', 'size', 'color', 'usage',
-  'label_text', 'unit', 'stock', 'min_stock', 'location_id', 'notes', 'archived', 'category_id', 'product_url'];
+  'label_text', 'unit', 'stock', 'min_stock', 'reorder_qty', 'location_id', 'notes', 'archived', 'category_id', 'product_url'];
 const ARTICLE_UPDATE = ['name', 'description', 'art_no', 'category', 'brand', 'model', 'size', 'color', 'usage',
-  'label_text', 'unit', 'min_stock', 'location_id', 'notes', 'archived', 'category_id', 'product_url'];
+  'label_text', 'unit', 'min_stock', 'reorder_qty', 'location_id', 'notes', 'archived', 'category_id', 'product_url'];
 const MACHINE_INSERT = ['code', 'name', 'category', 'brand', 'model', 'serial_no', 'inventory_no', 'home_location_id',
   'status', 'condition', 'condition_note', 'notes', 'archived', 'category_id', 'responsible_id', 'is_set', 'product_url'];
 const MACHINE_UPDATE = ['name', 'category', 'brand', 'model', 'serial_no', 'inventory_no', 'home_location_id',
   'condition', 'condition_note', 'notes', 'archived', 'category_id', 'responsible_id', 'is_set', 'product_url'];
 const REF_COLS = new Set(['parent_id', 'location_id', 'home_location_id', 'category_id', 'responsible_id', 'cover_photo_id']);
-const NUM_COLS = new Set(['stock', 'min_stock']);
+const NUM_COLS = new Set(['stock', 'min_stock', 'reorder_qty']);
 const BOOL_COLS = new Set(['archived', 'is_set']);
 const ENUM_COLS = new Set(['type', 'unit', 'status', 'condition']);
 const SHORT_CODE_RE = /^[A-Z0-9]{1,10}$/;          // locations_short_code_chk
@@ -88,6 +96,9 @@ const normCode = (c) => String(c ?? '').trim().toUpperCase();
 const ms = (v) => (v ? Date.parse(v) : NaN);
 const iso = (t) => new Date(t).toISOString();
 const round6 = (x) => Math.round(x * 1e6) / 1e6;
+const charLen = (s) => Array.from(String(s)).length;                           // length() in SQL (Zeichen)
+const leftChars = (s, n) => Array.from(String(s ?? '')).slice(0, n).join('');  // left() in SQL
+const byId = (a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);               // uuid-Reihenfolge wie order('id')
 function trimOrNull(v) {
   if (v === undefined || v === null) return null;
   const s = String(v).trim();
@@ -206,6 +217,7 @@ function emptyDb() {
     // «Lager organisieren»
     categories: [], photos: [], detections: [], photo_hotspots: [], org_tasks: [], set_components: [], floor_plans: [],
     sites: [],
+    shopping_items: [],           // Einkaufsliste
   };
 }
 
@@ -367,6 +379,8 @@ export function createApi({ LgrError = FallbackLgrError, storage, storageKey = S
       else if (NUM_COLS.has(k)) {
         v = num(v);
         if (Number.isNaN(v) || (v !== null && v < 0)) throw E('invalid_qty');
+        // articles_reorder_qty_chk: leer oder 0 < n < 1e9
+        if (k === 'reorder_qty' && v !== null && !(v > 0 && v < 1e9)) throw E('invalid_qty');
         if (v === null && k === 'stock') continue;
       } else if (REF_COLS.has(k)) v = v ? String(v) : null;
       else if (ENUM_COLS.has(k)) { v = v === null ? '' : String(v).trim(); if (!v) continue; }
@@ -548,6 +562,19 @@ export function createApi({ LgrError = FallbackLgrError, storage, storageKey = S
       user_name: c.name(mv.user_id),
       from_path: c.path(mv.from_location_id),
       to_path: c.path(mv.to_location_id),
+    };
+  }
+  // shopping_overview: Eintrag + Angaben aus article_overview + Namen (wer eingetragen / bestellt / besorgt)
+  function vShopping(s, c) {
+    const a = s.article_id && c.articles.has(s.article_id) ? vArticle(c.articles.get(s.article_id), c) : null;
+    const f = (k) => (a ? a[k] ?? null : null);
+    return {
+      ...pick(s, SHOPPING_COLS),
+      article_code: f('code'), article_stock: f('stock'), article_min_stock: f('min_stock'),
+      article_reorder_qty: f('reorder_qty'), article_unit: f('unit'), article_archived: f('archived'),
+      article_product_url: f('product_url'), article_location_path: f('location_path'),
+      article_location_code_path: f('location_code_path'), article_photo_path: f('photo_path'),
+      created_by_name: c.name(s.created_by), ordered_by_name: c.name(s.ordered_by), done_by_name: c.name(s.done_by),
     };
   }
   function getView(kind, col, val) {
@@ -855,6 +882,7 @@ export function createApi({ LgrError = FallbackLgrError, storage, storageKey = S
     a.stock = after;
     if (type === 'umlagerung') a.location_id = toLocationId;
     a.updated_at = nowIso();
+    shoppingSync(a, before);   // Trigger articles_shopping_sync (after update of stock)
     const mv = {
       id: ++db.seq.movement, article_id: a.id, type, qty: delta, stock_before: before, stock_after: after,
       from_location_id: from, to_location_id: type === 'umlagerung' ? toLocationId : from,
@@ -862,6 +890,118 @@ export function createApi({ LgrError = FallbackLgrError, storage, storageKey = S
     };
     db.stock_movements.push(mv);
     return mv;
+  }
+
+  // ---- Einkaufsliste (shopping_items; Trigger shopping_item_defaults, set_updated_at, audit_row, article_shopping_sync) ----
+  const shoppingOpenFor = (articleId, exceptId = null) => db.shopping_items.find((s) =>
+    s.article_id === articleId && s.id !== exceptId && SHOPPING_OPEN.includes(s.status)) || null;
+  function shoppingAudit(row, before) {   // audit_row: Änderungen aller Spalten ausser updated_at
+    const diff = {};
+    for (const k of SHOPPING_COLS) {
+      if (k !== 'updated_at' && !sameVal(before[k], row[k])) diff[k] = { alt: before[k] ?? null, neu: row[k] ?? null };
+    }
+    if (Object.keys(diff).length) audit('update', 'shopping_items', row.id, diff);
+  }
+  // Neuer Eintrag (nur aktive Benutzer; Herkunft «manuell» oder – nur über article_shopping_sync – «automatisch»).
+  // shopping_item_defaults: Name/Einheit vom Artikel, wenn leer; getrimmt; Ersteller = handelnde Person; Status «offen».
+  function insertShopping({ article_id = null, name = null, qty = null, unit = null, note = null, source = 'manuell' }) {
+    let n = name;
+    let u = unit;
+    if (article_id) {
+      const a = db.articles.find((x) => x.id === article_id);
+      if (!a) throw E('not_found');
+      if (!trimOrNull(n)) n = leftChars(a.name, 200);
+      if (!trimOrNull(u)) u = a.unit;
+    }
+    n = String(n ?? '').trim();
+    u = trimOrNull(u);
+    if (!n || charLen(n) > 200) throw E('name_required');                                  // shopping_items_name_check
+    if (qty !== null && !(qty > 0 && qty < 1e9)) throw E('invalid_qty');                    // shopping_items_qty_check
+    if (u !== null && charLen(u) > 20) throw E('invalid_value', 'shopping_items_unit_check');
+    if (article_id && shoppingOpenFor(article_id)) throw E('already_on_list');              // shopping_items_open_article_uniq
+    const t = nowIso();
+    const row = {
+      id: uuid(), article_id: article_id || null, name: n, qty, unit: u, note: trimOrNull(note), status: 'offen', source,
+      created_by: uid(), created_at: t, updated_at: t, ordered_by: null, ordered_at: null, done_by: null, done_at: null,
+    };
+    db.shopping_items.push(row);
+    audit('insert', 'shopping_items', row.id, omit(row, ['created_at', 'updated_at']));
+    return row;
+  }
+  // Name/Menge/Einheit/Notiz ändern; Artikel, Herkunft und Zeitstempel bleiben (shopping_item_defaults bei update)
+  function updateShopping(row, patch) {
+    const before = { ...row };
+    const next = { ...row, ...patch };
+    const a = row.article_id ? db.articles.find((x) => x.id === row.article_id) : null;
+    if (a) {
+      if (!trimOrNull(next.name)) next.name = leftChars(a.name, 200);
+      if (!trimOrNull(next.unit)) next.unit = a.unit;
+    }
+    next.name = String(next.name ?? '').trim();
+    next.unit = trimOrNull(next.unit);
+    next.note = trimOrNull(next.note);
+    if (!next.name || charLen(next.name) > 200) throw E('name_required');
+    if (next.unit !== null && charLen(next.unit) > 20) throw E('invalid_value', 'shopping_items_unit_check');
+    if (next.note !== null && charLen(next.note) > 500) throw E('invalid_value', 'shopping_items_note_check');
+    for (const k of ['name', 'qty', 'unit', 'note']) row[k] = next[k];
+    row.updated_at = nowIso();
+    shoppingAudit(row, before);
+  }
+  // Status wechseln: Stempel wie shopping_item_defaults (nur bei echtem Wechsel; sonst bleiben sie)
+  function changeShoppingStatus(row, status) {
+    const before = { ...row };
+    if (status !== row.status) {
+      if (row.article_id && SHOPPING_OPEN.includes(status) && shoppingOpenFor(row.article_id, row.id)) throw E('already_on_list');
+      const t = nowIso();
+      row.status = status;
+      if (status === 'offen') { row.ordered_by = null; row.ordered_at = null; }
+      if (status === 'bestellt') { row.ordered_by = uid(); row.ordered_at = t; }
+      if (status === 'erledigt' || status === 'verworfen') { row.done_by = uid(); row.done_at = t; } else { row.done_by = null; row.done_at = null; }
+    }
+    row.updated_at = nowIso();
+    shoppingAudit(row, before);
+  }
+  // article_shopping_sync: nach jeder Bestandsänderung eines Artikels mit Mindestbestand (nicht archiviert).
+  // Sinkt der Bestand auf/unter den Mindestbestand → automatisch auf die Liste (ausser es gibt schon einen offenen Eintrag);
+  // steigt er über den Mindestbestand → offene Einträge des Artikels «erledigt». Mindestbestand setzen allein ändert nichts.
+  function shoppingSync(a, before) {
+    if (a.archived || a.min_stock === null || a.min_stock === undefined || a.stock === before) return;
+    if (a.stock < before && a.stock <= a.min_stock) {
+      if (shoppingOpenFor(a.id)) return;   // on conflict do nothing
+      const qty = a.reorder_qty ?? Math.min(Math.max(Math.ceil(round6(a.min_stock * 2 - a.stock)), 1), 999999999);
+      insertShopping({ article_id: a.id, name: leftChars(a.name, 200), qty, unit: a.unit, source: 'automatisch' });
+    } else if (a.stock > before && a.stock > a.min_stock) {
+      for (const s of db.shopping_items) {
+        if (s.article_id === a.id && SHOPPING_OPEN.includes(s.status)) changeShoppingStatus(s, 'erledigt');
+      }
+    }
+  }
+  // saveShoppingItem: Eingaben wie js/api-supabase.js prüfen, dann wie die Datenbank (RLS shopping_insert/_update)
+  function coreSaveShopping(obj) {
+    if (!obj || typeof obj !== 'object') throw E('invalid_value');
+    const patch = {};
+    if (has(obj, 'name')) { patch.name = trimOrNull(obj.name); if (patch.name && patch.name.length > 200) throw E('invalid_value'); }
+    if (has(obj, 'qty')) {
+      const q = num(obj.qty);
+      if (Number.isNaN(q) || (q !== null && !(q > 0 && q < 1e9))) throw E('invalid_qty');
+      patch.qty = q;
+    }
+    if (has(obj, 'unit')) { patch.unit = trimOrNull(obj.unit); if (patch.unit && patch.unit.length > 20) throw E('invalid_value'); }
+    if (has(obj, 'note')) { patch.note = trimOrNull(obj.note); if (patch.note && patch.note.length > 500) throw E('invalid_value'); }
+    if (!obj.id) {
+      const articleId = obj.article_id || null;
+      if (articleId && !isUuid(articleId)) throw E('not_found');
+      if (!articleId && !patch.name) throw E('name_required');
+      if (!isActive()) throw E('not_authorized');   // shopping_insert: nur aktive Benutzer
+      // Herkunft ist nie wählbar (grant insert ohne source/status): immer «manuell», Status «offen»
+      return insertShopping({ ...patch, article_id: articleId, source: 'manuell' }).id;
+    }
+    if (!isUuid(obj.id)) throw E('not_found');
+    if (has(patch, 'name') && !patch.name) throw E('name_required');
+    const row = db.shopping_items.find((s) => s.id === obj.id) || null;
+    if (!row || !canRead()) throw E('not_found');   // für Nicht-Freigegebene unsichtbar (RLS)
+    if (Object.keys(patch).length) updateShopping(row, patch);
+    return row.id;
   }
 
   // ---- Mitarbeiter ----
@@ -965,13 +1105,15 @@ export function createApi({ LgrError = FallbackLgrError, storage, storageKey = S
         const a = db.articles.find((x) => x.id === r.article_id);
         if (!a) continue;
         const after = Math.max(round6(a.stock + (r.counted - r.expected)), 0);
+        const before = a.stock;
         db.stock_movements.push({
-          id: ++db.seq.movement, article_id: a.id, type: 'inventur', qty: round6(after - a.stock), stock_before: a.stock,
+          id: ++db.seq.movement, article_id: a.id, type: 'inventur', qty: round6(after - before), stock_before: before,
           stock_after: after, from_location_id: a.location_id, to_location_id: a.location_id, user_id: uid(),
           note: `Inventur: ${inv.name}`, request_id: null, created_at: nowIso(),
         });
         a.stock = after;
         a.updated_at = nowIso();
+        shoppingSync(a, before);   // Trigger articles_shopping_sync
         r.applied = true;
       }
       for (const c of db.inventory_machine_checks) {
@@ -1388,6 +1530,74 @@ export function createApi({ LgrError = FallbackLgrError, storage, storageKey = S
           .sort(newestFirst('created_at'))
           .slice(0, n)
           .map((mv) => vMovement(mv, c));
+      });
+    },
+
+    // ---- Einkaufsliste (was gekauft werden muss; kein Bestellmodul) ----
+    // status 'open' = offen + bestellt (neueste zuerst), 'done' = erledigt/verworfen (die letzten 40)
+    async listShopping({ status = 'open' } = {}) {
+      return read(() => {
+        if (!canRead()) return [];
+        const c = viewCtx();
+        if (status === 'done') {
+          const t = (s) => { const v = ms(s.done_at); return Number.isNaN(v) ? -Infinity : v; };   // nulls last
+          return db.shopping_items
+            .filter((s) => s.status === 'erledigt' || s.status === 'verworfen')
+            .sort((a, b) => (t(b) - t(a)) || byId(a, b))
+            .slice(0, SHOPPING_DONE_LIMIT)
+            .map((s) => vShopping(s, c));
+        }
+        return db.shopping_items
+          .filter((s) => SHOPPING_OPEN.includes(s.status))
+          .sort((a, b) => (ms(b.created_at) - ms(a.created_at)) || byId(a, b))
+          .map((s) => vShopping(s, c));
+      });
+    },
+    async saveShoppingItem(obj) {
+      return mutate(() => {
+        const id = coreSaveShopping(obj);
+        return vShopping(db.shopping_items.find((s) => s.id === id), viewCtx());
+      });
+    },
+    async setShoppingStatus(id, status) {
+      return mutate(() => {
+        if (!isUuid(id)) throw E('not_found');
+        if (!SHOPPING_STATUS.includes(status)) throw E('invalid_status');
+        const row = db.shopping_items.find((s) => s.id === id) || null;
+        if (!row || !canRead()) throw E('not_found');
+        changeShoppingStatus(row, status);
+        return vShopping(row, viewCtx());
+      });
+    },
+    async deleteShoppingItem(id) {
+      return mutate(() => {
+        const row = isUuid(id) ? db.shopping_items.find((s) => s.id === id) : null;
+        if (!row || !canRead()) throw E('not_found');
+        // shopping_delete: nur der eigene Eintrag oder Lagerverantwortliche/Admins (sonst «verworfen» setzen)
+        if (row.created_by !== uid() && !isStaff()) throw E('not_authorized');
+        db.shopping_items = db.shopping_items.filter((s) => s.id !== id);
+        audit('delete', 'shopping_items', row.id, row);
+      });
+    },
+    // article_consumption: Entnahmen der letzten 90 Tage je Artikel (Entnahmen sind negativ gebucht → used_90d positiv)
+    async listConsumption() {
+      return read(() => {
+        if (!canRead()) return [];
+        const since = nowMs() - CONSUMPTION_MS;
+        const out = new Map();
+        for (const mv of db.stock_movements) {
+          if (mv.type !== 'entnahme' || !(ms(mv.created_at) > since)) continue;
+          let e = out.get(mv.article_id);
+          if (!e) {
+            e = { article_id: mv.article_id, used_90d: 0, takes_90d: 0, first_take_at: mv.created_at, last_take_at: mv.created_at };
+            out.set(mv.article_id, e);
+          }
+          e.used_90d = round6(e.used_90d - mv.qty);
+          e.takes_90d += 1;
+          if (ms(mv.created_at) < ms(e.first_take_at)) e.first_take_at = mv.created_at;
+          if (ms(mv.created_at) > ms(e.last_take_at)) e.last_take_at = mv.created_at;
+        }
+        return [...out.values()].sort((a, b) => (a.article_id < b.article_id ? -1 : a.article_id > b.article_id ? 1 : 0));
       });
     },
 

@@ -65,6 +65,8 @@ describe('api.js', () => {
   test('Demo-Modus (?demo=1 oder ohne Konfiguration), alle Vertragsmethoden vorhanden', async () => {
     assert.equal(defaultApi.mode, 'demo');
     for (const m of API_METHODS) assert.equal(typeof defaultApi[m], 'function', m);
+    // genau der Vertrag: keine zusätzlichen öffentlichen Methoden im Demo
+    assert.deepEqual(Object.keys(defaultApi).filter((k) => typeof defaultApi[k] === 'function').sort(), [...API_METHODS].sort());
     await defaultApi.init();
     await rejects(defaultApi.checkoutMachine(randomUUID(), {}), 'not_found');
     assert.ok(globalThis.localStorage.getItem(STORAGE_KEY), 'Demodaten im localStorage');
@@ -647,6 +649,311 @@ describe('Speicher', () => {
   });
 });
 
+describe('Einkaufsliste (wie tests/db.test.mjs «einkaufsliste»)', () => {
+  const open = async (api, articleId) => (await api.listShopping()).filter((s) => s.article_id === articleId);
+  const DAY = 24 * 3600 * 1000;
+
+  test('Demodaten: Schrauben unter dem Mindestbestand stehen automatisch auf der Liste; Verbrauch 90 Tage', async () => {
+    const api = await demo();
+    const sch = await A(api, 'INV-0003');
+    assert.equal(sch.reorder_qty, null);
+    const list = await api.listShopping();
+    assert.deepEqual(list.map((s) => [s.article_id, s.name, s.qty, s.unit, s.source, s.status, s.created_by_name]),
+      [[sch.id, 'Schrauben 4×40', 170, 'Stk', 'automatisch', 'offen', 'Cristian']]);   // 150 × 2 − 130
+    assert.deepEqual([list[0].article_code, list[0].article_stock, list[0].article_min_stock, list[0].article_reorder_qty,
+      list[0].article_unit, list[0].article_archived, list[0].article_location_path],
+    ['INV-0003', 130, 150, null, 'Stk', false, 'Hauptlager / Regal A / Fach 02 / Box 03']);
+    assert.deepEqual(await api.listShopping({ status: 'done' }), []);
+    assert.equal((await api.orgStats()).shopping_open, 1);
+    const used = (await api.listConsumption()).find((c) => c.article_id === sch.id);
+    assert.deepEqual([used.used_90d, used.takes_90d], [270, 3], '100 + 120 + 50 entnommen');
+    assert.ok(Date.parse(used.first_take_at) < Date.parse(used.last_take_at));
+    const ids = (await api.listConsumption()).map((c) => c.article_id);
+    assert.deepEqual(ids, [...ids].sort(), 'nach article_id sortiert');
+  });
+
+  test('automatisch unter Mindestbestand, einmal je Artikel, Zugang hakt ab, Rechte, Protokoll', async () => {
+    const api = await demo();
+    const regalB = await L(api, 'L-0005');
+    await as(api, 'luca');
+    await rejects(api.saveArticle({ name: 'Papier A4', reorder_qty: 0 }), 'invalid_qty');
+    await rejects(api.saveArticle({ name: 'Papier A4', reorder_qty: 1e9 }), 'invalid_qty');
+    await rejects(api.saveArticle({ name: 'Papier A4', reorder_qty: 'viel' }), 'invalid_qty');
+    const art = await api.saveArticle({ name: 'Papier A4', unit: 'Pkg', stock: 10, min_stock: 4, reorder_qty: '5', location_id: regalB.id });
+    assert.equal(art.reorder_qty, 5);
+    await rejects(api.saveArticle({ id: art.id, reorder_qty: 0 }), 'invalid_qty');
+    assert.equal((await api.getArticle(art.id)).reorder_qty, 5);
+
+    await as(api, 'daniel');
+    await api.moveStock(art.id, { type: 'entnahme', qty: 5 });
+    assert.equal((await open(api, art.id)).length, 0, 'über dem Mindestbestand: nichts');
+    await api.moveStock(art.id, { type: 'entnahme', qty: 1 });
+    let o = await open(api, art.id);
+    assert.equal(o.length, 1, 'auf Mindestbestand: automatisch auf der Liste');
+    assert.deepEqual([o[0].name, o[0].qty, o[0].unit, o[0].source, o[0].status, o[0].created_by],
+      ['Papier A4', 5, 'Pkg', 'automatisch', 'offen', U.daniel]);
+    await api.moveStock(art.id, { type: 'entnahme', qty: 1 });
+    assert.equal((await open(api, art.id)).length, 1, 'weitere Entnahme: kein zweiter Eintrag');
+    await rejects(api.saveShoppingItem({ article_id: art.id }), 'already_on_list');
+
+    // freier Eintrag (ohne Artikel); Herkunft und Status sind nicht wählbar
+    const free = await api.saveShoppingItem({ name: '  Kaffeebohnen ', qty: '2', unit: 'kg', note: '  ', source: 'automatisch', status: 'erledigt' });
+    assert.deepEqual([free.name, free.qty, free.unit, free.note, free.source, free.status, free.created_by, free.article_id],
+      ['Kaffeebohnen', 2, 'kg', null, 'manuell', 'offen', U.daniel, null]);
+    await rejects(api.saveShoppingItem({ name: '   ' }), 'name_required');
+    await rejects(api.saveShoppingItem({}), 'name_required');
+    await rejects(api.saveShoppingItem(null), 'invalid_value');
+    await rejects(api.saveShoppingItem({ name: 'X', qty: 0 }), 'invalid_qty');
+    await rejects(api.saveShoppingItem({ name: 'X', qty: 1e9 }), 'invalid_qty');
+    await rejects(api.saveShoppingItem({ name: 'X', qty: 'zwei' }), 'invalid_qty');
+    await rejects(api.saveShoppingItem({ name: 'x'.repeat(201) }), 'invalid_value');
+    await rejects(api.saveShoppingItem({ name: 'X', unit: 'u'.repeat(21) }), 'invalid_value');
+    await rejects(api.saveShoppingItem({ name: 'X', note: 'n'.repeat(501) }), 'invalid_value');
+    await rejects(api.saveShoppingItem({ article_id: 'kein-uuid' }), 'not_found');
+    await rejects(api.saveShoppingItem({ article_id: randomUUID() }), 'not_found');
+
+    // bestellt → Zugang über den Mindestbestand → erledigt (wer hat bestellt, wer hat eingebucht)
+    const b1 = await api.setShoppingStatus(o[0].id, 'bestellt');
+    assert.deepEqual([b1.status, b1.ordered_by, b1.ordered_by_name, b1.done_by], ['bestellt', U.daniel, 'Daniel', null]);
+    await as(api, 'luca');
+    await api.moveStock(art.id, { type: 'zugang', qty: 1 });
+    assert.equal((await open(api, art.id)).length, 1, 'Zugang bis genau Mindestbestand: bleibt offen');
+    await api.moveStock(art.id, { type: 'zugang', qty: 5 });
+    assert.equal((await open(api, art.id)).length, 0);
+    const done = (await api.listShopping({ status: 'done' })).find((s) => s.id === o[0].id);
+    assert.deepEqual([done.status, done.ordered_by, done.done_by, done.done_by_name], ['erledigt', U.daniel, U.luca, 'Luca']);
+    const au = await api.listAudit({ entity: 'shopping_items', entityId: o[0].id });
+    assert.deepEqual(au.map((r) => [r.action, r.user_id]), [['update', U.luca], ['update', U.daniel], ['insert', U.daniel]],
+      'automatischer Eintrag und Statuswechsel stehen im Protokoll');
+    assert.deepEqual(au[0].details.status, { alt: 'bestellt', neu: 'erledigt' });
+    assert.equal(au[2].details.source, 'automatisch');
+    assert.ok(!('updated_at' in au[0].details) && !('created_at' in au[2].details));
+
+    // ohne Nachkaufmenge: bis zum doppelten Mindestbestand; Korrektur löst ebenfalls aus
+    await api.saveArticle({ id: art.id, reorder_qty: null });
+    await api.moveStock(art.id, { type: 'korrektur', qty: 1, note: 'gezählt' });
+    o = await open(api, art.id);
+    assert.deepEqual([o.length, o[0].qty, o[0].created_by], [1, 7, U.luca]);
+    // Mindestbestand setzen fügt nichts hinzu; Umlagerung (Bestand gleich) ebenfalls nicht
+    const toner = await api.saveArticle({ name: 'Toner', unit: 'Stk', stock: 0 });
+    await api.saveArticle({ id: toner.id, min_stock: 2 });
+    await api.moveStock(toner.id, { type: 'umlagerung', toLocationId: regalB.id });
+    assert.equal((await open(api, toner.id)).length, 0);
+
+    // Ansicht mit Artikelangaben; Verbrauch der letzten 90 Tage (Korrektur zählt nicht)
+    assert.deepEqual([o[0].article_code, o[0].article_stock, o[0].article_min_stock, o[0].article_reorder_qty, o[0].article_unit,
+      o[0].article_archived, o[0].article_location_path, o[0].created_by_name],
+    [art.code, 1, 4, null, 'Pkg', false, 'Hauptlager / Regal B', 'Luca']);
+    const c = (await api.listConsumption()).find((x) => x.article_id === art.id);
+    assert.deepEqual([c.used_90d, c.takes_90d], [7, 3]);
+    const stats = await api.orgStats();
+    assert.equal(stats.shopping_open, 3, 'Schrauben (Demodaten), Kaffeebohnen, Papier');
+    assert.equal(stats.shopping_open, (await api.listShopping()).length);
+
+    // löschen: nur eigener Eintrag oder Lagerverantwortliche/Admins
+    const lucas = await api.saveShoppingItem({ name: 'Druckerpapier A3' });
+    await as(api, 'daniel');
+    const filter = await api.saveShoppingItem({ name: 'Kaffeefilter' });
+    await rejects(api.deleteShoppingItem(lucas.id), 'not_authorized');
+    await rejects(api.deleteShoppingItem(o[0].id), 'not_authorized');   // von Lucas Korrektur ausgelöst
+    await api.deleteShoppingItem(free.id);
+    await rejects(api.deleteShoppingItem(free.id), 'not_found');
+    await rejects(api.deleteShoppingItem('kein-uuid'), 'not_found');
+    await as(api, 'luca');
+    await api.deleteShoppingItem(filter.id);
+    await api.deleteShoppingItem(o[0].id);
+    assert.deepEqual((await api.listShopping()).map((s) => s.name).sort(), ['Druckerpapier A3', 'Schrauben 4×40']);
+    assert.deepEqual((await api.listAudit({ entity: 'shopping_items', entityId: free.id })).map((r) => [r.action, r.user_id]),
+      [['delete', U.daniel], ['insert', U.daniel]]);
+    assert.deepEqual((await api.listAudit({ entity: 'shopping_items', entityId: filter.id })).map((r) => [r.action, r.user_id]),
+      [['delete', U.luca], ['insert', U.daniel]]);
+
+    // nicht freigegeben (Ana) sieht nichts und darf nichts; abgemeldet → not_authorized
+    await as(api, 'ana');
+    assert.deepEqual(await api.listShopping(), []);
+    assert.deepEqual(await api.listShopping({ status: 'done' }), []);
+    assert.deepEqual(await api.listConsumption(), []);
+    assert.equal((await api.orgStats()).shopping_open, 0);
+    await rejects(api.saveShoppingItem({ name: 'X' }), 'not_authorized');
+    await rejects(api.saveShoppingItem({ id: lucas.id, name: 'Y' }), 'not_found');
+    await rejects(api.setShoppingStatus(lucas.id, 'erledigt'), 'not_found');
+    await rejects(api.deleteShoppingItem(lucas.id), 'not_found');
+    await api.signOut();
+    await rejects(api.listShopping(), 'not_authorized');
+    await rejects(api.listConsumption(), 'not_authorized');
+    await rejects(api.saveShoppingItem({ name: 'X' }), 'not_authorized');
+    await rejects(api.setShoppingStatus(lucas.id, 'erledigt'), 'not_authorized');
+  });
+
+  test('Status und Ändern: Stempel wie shopping_item_defaults, wieder öffnen nur ohne zweiten offenen Eintrag', async () => {
+    const api = await demo();
+    await as(api, 'luca');
+    const art = await api.saveArticle({ name: 'Toner HP 26A', unit: 'Stk' });
+    await as(api, 'daniel');
+    const it = await api.saveShoppingItem({ article_id: art.id, qty: 2, note: ' schwarz ' });
+    assert.deepEqual([it.name, it.unit, it.qty, it.note, it.source, it.status, it.created_by_name, it.ordered_at, it.done_at],
+      ['Toner HP 26A', 'Stk', 2, 'schwarz', 'manuell', 'offen', 'Daniel', null, null], 'Name/Einheit vom Artikel');
+    const kb = await A(api, 'INV-0004');
+    const own = await api.saveShoppingItem({ article_id: kb.id, name: ' Kabelbinder lang ', unit: ' Sack ' });
+    assert.deepEqual([own.name, own.unit, own.article_code], ['Kabelbinder lang', 'Sack', 'INV-0004'], 'eigener Name/Einheit bleibt');
+
+    await rejects(api.setShoppingStatus(it.id, 'gekauft'), 'invalid_status');
+    await rejects(api.setShoppingStatus('kein-uuid', 'offen'), 'not_found');
+    await rejects(api.setShoppingStatus(randomUUID(), 'offen'), 'not_found');
+    const b = await api.setShoppingStatus(it.id, 'bestellt');
+    assert.deepEqual([b.status, b.ordered_by, b.done_by, b.done_at], ['bestellt', U.daniel, null, null]);
+    assert.ok(b.ordered_at);
+    await as(api, 'luca');
+    const same = await api.setShoppingStatus(it.id, 'bestellt');
+    assert.deepEqual([same.ordered_by, same.ordered_at], [U.daniel, b.ordered_at], 'gleicher Status: Stempel bleiben');
+    const e = await api.setShoppingStatus(it.id, 'erledigt');
+    assert.deepEqual([e.status, e.ordered_by, e.done_by, e.done_by_name], ['erledigt', U.daniel, U.luca, 'Luca']);
+    assert.ok(e.done_at);
+    const v = await api.setShoppingStatus(it.id, 'verworfen');
+    assert.deepEqual([v.status, v.ordered_by, v.done_by], ['verworfen', U.daniel, U.luca]);
+    // neuer Eintrag für denselben Artikel → der alte lässt sich nicht wieder öffnen (offen oder bestellt)
+    const again = await api.saveShoppingItem({ article_id: art.id });
+    await rejects(api.setShoppingStatus(it.id, 'offen'), 'already_on_list');
+    await rejects(api.setShoppingStatus(it.id, 'bestellt'), 'already_on_list');
+    await api.setShoppingStatus(again.id, 'verworfen');
+    const re = await api.setShoppingStatus(it.id, 'offen');
+    assert.deepEqual([re.status, re.ordered_by, re.ordered_at, re.done_by, re.done_at], ['offen', null, null, null, null]);
+    // bestellt → erledigt behält die Bestellung; bestellt → offen nimmt sie zurück
+    await api.setShoppingStatus(it.id, 'bestellt');
+    const back = await api.setShoppingStatus(it.id, 'offen');
+    assert.deepEqual([back.ordered_by, back.ordered_at], [null, null]);
+    await api.setShoppingStatus(it.id, 'bestellt');
+
+    // ändern: Name/Menge/Einheit/Notiz; leere Einheit → wieder die des Artikels; Artikel/Herkunft/Status/Stempel bleiben
+    const ch = await api.saveShoppingItem({
+      id: it.id, name: ' Toner HP 26X ', qty: '1,5', unit: '', note: '', status: 'erledigt', source: 'automatisch', article_id: null,
+    });
+    assert.deepEqual([ch.name, ch.qty, ch.unit, ch.note, ch.status, ch.source, ch.article_id, ch.ordered_by],
+      ['Toner HP 26X', 1.5, 'Stk', null, 'bestellt', 'manuell', art.id, U.luca]);
+    await rejects(api.saveShoppingItem({ id: it.id, name: ' ' }), 'name_required');
+    await rejects(api.saveShoppingItem({ id: it.id, qty: -1 }), 'invalid_qty');
+    await rejects(api.saveShoppingItem({ id: it.id, unit: 'u'.repeat(21) }), 'invalid_value');
+    await rejects(api.saveShoppingItem({ id: randomUUID(), name: 'X' }), 'not_found');
+    await rejects(api.saveShoppingItem({ id: 'kein-uuid', name: 'X' }), 'not_found');
+    const freeItem = await api.saveShoppingItem({ name: 'Batterien AA', unit: 'Pkg', qty: 3 });
+    const fu = await api.saveShoppingItem({ id: freeItem.id, unit: '', qty: null });
+    assert.deepEqual([fu.unit, fu.qty], [null, null], 'ohne Artikel bleibt die Einheit leer; Menge darf leer sein');
+
+    // Protokoll: gleicher Status ohne Eintrag; Statuswechsel und Änderungen mit alt/neu
+    const au = await api.listAudit({ entity: 'shopping_items', entityId: it.id });
+    assert.deepEqual(au.map((r) => r.action), ['update', 'update', 'update', 'update', 'update', 'update', 'update', 'update', 'insert']);
+    assert.deepEqual(au[0].details, {
+      name: { alt: 'Toner HP 26A', neu: 'Toner HP 26X' }, qty: { alt: 2, neu: 1.5 }, note: { alt: 'schwarz', neu: null },
+    });
+    assert.deepEqual(au[0].user_id, U.luca);
+  });
+
+  test('Inventur mit Buchung führt die Liste nach; ohne Buchung und archivierte Artikel nie', async () => {
+    const api = await demo();
+    await as(api, 'luca');
+    const a = await api.saveArticle({ name: 'Klebeband', unit: 'Rolle', stock: 10, min_stock: 4 });
+    const arch = await api.saveArticle({ name: 'Altes Klebeband', unit: 'Rolle', stock: 10, min_stock: 4 });
+    const inv = await api.createInventory({ name: 'Inventur Klebeband' });
+    await api.countArticle(inv.id, a.id, 3);
+    await api.countArticle(inv.id, arch.id, 1);
+    await api.saveArticle({ id: arch.id, archived: true });
+    await api.closeInventory(inv.id, true);
+    assert.deepEqual((await open(api, a.id)).map((s) => [s.qty, s.unit, s.source, s.created_by]), [[5, 'Rolle', 'automatisch', U.luca]]);
+    assert.equal((await A(api, arch.code)).stock, 1);
+    const all = [...await api.listShopping(), ...await api.listShopping({ status: 'done' })];
+    assert.ok(!all.some((s) => s.article_id === arch.id), 'archiviert: nie auf die Liste');
+
+    const inv2 = await api.createInventory({ name: 'Ohne Buchung' });
+    await api.countArticle(inv2.id, a.id, 0);
+    await api.closeInventory(inv2.id, false);
+    assert.deepEqual((await open(api, a.id)).map((s) => s.qty), [5]);
+
+    const inv3 = await api.createInventory({ name: 'Nachlieferung gezählt' });
+    await api.countArticle(inv3.id, a.id, 9);
+    await api.closeInventory(inv3.id, true);
+    assert.deepEqual(await open(api, a.id), []);
+    const done = (await api.listShopping({ status: 'done' })).filter((s) => s.article_id === a.id);
+    assert.deepEqual(done.map((s) => [s.status, s.done_by]), [['erledigt', U.luca]]);
+  });
+
+  test('Artikel löschen nimmt seine Einträge mit (on delete cascade, protokolliert)', async () => {
+    const api = await demo();
+    await as(api, 'luca');
+    const art = await api.saveArticle({ name: 'Wird gelöscht', unit: 'Stk' });   // Bestand 0 → keine Bewegung
+    await as(api, 'daniel');
+    const s = await api.saveShoppingItem({ article_id: art.id, qty: 1 });
+    await as(api, 'cristian');
+    await api.deleteArticle(art.id);
+    assert.ok(!(await api.listShopping()).some((x) => x.id === s.id));
+    assert.deepEqual((await api.listAudit({ entity: 'shopping_items', entityId: s.id })).map((r) => [r.action, r.user_id]),
+      [['delete', U.cristian], ['insert', U.daniel]]);
+  });
+
+  test('Reihenfolge: offen neueste zuerst, erledigt die letzten 40; Verbrauch nur 90 Tage (Uhr gesteuert)', async () => {
+    let T = Date.parse('2026-03-02T09:00:00Z');
+    const api = createApi({ LgrError, storage: new MemoryStorage(), now: () => T });
+    await api.init();
+    await as(api, 'luca');
+    const ids = [];
+    for (let i = 0; i < 42; i += 1) {
+      T += 60 * 1000;
+      ids.push((await api.saveShoppingItem({ name: `Posten ${i}` })).id);
+    }
+    const mine = (rows) => rows.filter((s) => s.name.startsWith('Posten ')).map((s) => s.id);
+    assert.deepEqual(mine(await api.listShopping()), [...ids].reverse());
+    for (const [i, id] of ids.entries()) {
+      T += 60 * 1000;
+      await api.setShoppingStatus(id, i % 2 ? 'erledigt' : 'verworfen');
+    }
+    const done = await api.listShopping({ status: 'done' });
+    assert.equal(done.length, 40);
+    assert.deepEqual(done.map((s) => s.id), ids.slice(2).reverse(), 'nach done_at, neueste zuerst');
+    T += 60 * 1000;
+    const x1 = await api.saveShoppingItem({ name: 'Gleichzeitig 1' });
+    const x2 = await api.saveShoppingItem({ name: 'Gleichzeitig 2' });
+    assert.deepEqual((await api.listShopping()).slice(0, 2).map((s) => s.id), [x1.id, x2.id].sort(), 'gleiche Zeit: nach id');
+
+    const art = await api.saveArticle({ name: 'Handschuhe', unit: 'Paar', stock: 100 });
+    const T0 = T;
+    await api.moveStock(art.id, { type: 'entnahme', qty: 10 });
+    T += DAY;
+    await api.moveStock(art.id, { type: 'entnahme', qty: '2,5' });
+    await api.moveStock(art.id, { type: 'zugang', qty: 50 });
+    let c = (await api.listConsumption()).find((x) => x.article_id === art.id);
+    assert.deepEqual(c, { article_id: art.id, used_90d: 12.5, takes_90d: 2, first_take_at: new Date(T0).toISOString(), last_take_at: new Date(T).toISOString() });
+    T = T0 + 90 * DAY;   // genau 90 Tage später: die erste Entnahme fällt heraus (created_at > now − 90 Tage)
+    c = (await api.listConsumption()).find((x) => x.article_id === art.id);
+    assert.deepEqual([c.used_90d, c.takes_90d, c.first_take_at], [2.5, 1, new Date(T0 + DAY).toISOString()]);
+    T += DAY;
+    assert.ok(!(await api.listConsumption()).some((x) => x.article_id === art.id));
+  });
+
+  test('gespeicherter Stand ohne Einkaufsliste/Nachkaufmenge wird ohne Verlust ergänzt (Version bleibt 3)', async () => {
+    const storage = new MemoryStorage();
+    const a = fresh(storage);
+    await a.init();
+    const before = (await a.listArticles({ includeArchived: true })).map((x) => [x.code, x.stock, x.min_stock]);
+    const old = JSON.parse(storage.getItem(STORAGE_KEY));
+    assert.equal(old.version, 3);
+    delete old.shopping_items;
+    for (const x of old.articles) delete x.reorder_qty;
+    storage.setItem(STORAGE_KEY, JSON.stringify(old));
+
+    const b = fresh(storage);
+    assert.deepEqual(await b.listShopping(), []);
+    const arts = await b.listArticles({ includeArchived: true });
+    assert.deepEqual(arts.map((x) => [x.code, x.stock, x.min_stock]), before);
+    assert.ok(arts.every((x) => x.reorder_qty === null));
+    assert.equal((await b.orgStats()).shopping_open, 0);
+    // weiterarbeiten: Entnahme unter dem Mindestbestand trägt ein (Mindestbestand allein hatte nichts eingetragen)
+    const sch = arts.find((x) => x.code === 'INV-0003');
+    await b.moveStock(sch.id, { type: 'entnahme', qty: 10 });
+    assert.deepEqual((await b.listShopping()).map((s) => [s.article_id, s.qty, s.source]), [[sch.id, 180, 'automatisch']]);
+    const stored = JSON.parse(storage.getItem(STORAGE_KEY));
+    assert.deepEqual([stored.version, stored.shopping_items.length], [3, 1]);
+  });
+});
+
 // =============================================================================================
 //  Teil 2: Supabase-Implementierung mit Ersatz-Client
 // =============================================================================================
@@ -716,6 +1023,8 @@ describe('Supabase-Implementierung (Ersatz-Client)', { skip: !hasHooks && 'modul
     const { api } = make(() => {});
     assert.equal(api.mode, 'supabase');
     for (const m of API_METHODS) assert.equal(typeof api[m], 'function', m);
+    // genau der Vertrag (Test-Hilfen mit «_», z. B. _mapError, ausgenommen)
+    assert.deepEqual(Object.keys(api).filter((k) => typeof api[k] === 'function' && !k.startsWith('_')).sort(), [...API_METHODS].sort());
   });
 
   test('Fehlerzuordnung', () => {

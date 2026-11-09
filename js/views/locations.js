@@ -19,7 +19,7 @@ registerStrings({
   de: {
     'locations.title': 'Lagerorte',
     'locations.new': 'Neuer Lagerort',
-    'locations.addChild': 'Unterort hinzufügen',
+    'locations.addChild': 'Unterort hinzufügen', 'locations.putaway': 'Hier einräumen',
     'locations.addChildTo': 'Unterort zu «{name}» hinzufügen',
     'locations.searchLabel': 'Lagerorte suchen',
     'locations.searchPh': 'Name, Code oder Pfad…',
@@ -98,7 +98,7 @@ registerStrings({
   pt: {
     'locations.title': 'Localizações',
     'locations.new': 'Nova localização',
-    'locations.addChild': 'Adicionar sublocalização',
+    'locations.addChild': 'Adicionar sublocalização', 'locations.putaway': 'Arrumar aqui',
     'locations.addChildTo': 'Adicionar sublocalização a «{name}»',
     'locations.searchLabel': 'Pesquisar localizações',
     'locations.searchPh': 'Nome, código ou caminho…',
@@ -177,7 +177,7 @@ registerStrings({
   es: {
     'locations.title': 'Ubicaciones',
     'locations.new': 'Nueva ubicación',
-    'locations.addChild': 'Añadir sububicación',
+    'locations.addChild': 'Añadir sububicación', 'locations.putaway': 'Colocar aquí',
     'locations.addChildTo': 'Añadir sububicación a «{name}»',
     'locations.searchLabel': 'Buscar ubicaciones',
     'locations.searchPh': 'Nombre, código o ruta…',
@@ -725,6 +725,7 @@ async function cardView(ctx) {
       <div class="row">
         <a class="btn sm" href="#/l/${enc(loc.code)}/bearbeiten">${icon('edit')}${esc(t('btn.edit'))}</a>
         ${!loc.archived ? `<a class="btn sm" href="#/lagerorte/neu?parent=${enc(loc.id)}">${icon('plus')}${esc(t('locations.addChild'))}</a>` : ''}
+        ${!loc.archived ? `<a class="btn sm" href="#/einraeumen?ziel=${enc(loc.code)}">${icon('move')}${esc(t('locations.putaway'))}</a>` : ''}
         <button type="button" class="btn sm" data-act="label">${icon('print')}${esc(t('locations.printLabel'))}</button>
         <button type="button" class="btn sm" data-act="labels-all">${icon('label')}${esc(t('locations.labelsAll'))}</button>
         <button type="button" class="btn sm" data-act="archive">${icon(loc.archived ? 'history' : 'box')}${esc(t(loc.archived ? 'btn.unarchive' : 'btn.archive'))}</button>

@@ -34,16 +34,16 @@ const AUTH_EVENTS = new Set(['SIGNED_IN', 'SIGNED_OUT', 'PASSWORD_RECOVERY', 'US
 const LOCATION_INSERT = ['code', 'name', 'type', 'parent_id', 'notes', 'archived', 'short_code', 'responsible_id', 'cover_photo_id', 'site_id'];
 const LOCATION_UPDATE = ['name', 'type', 'parent_id', 'notes', 'archived', 'short_code', 'responsible_id', 'cover_photo_id', 'site_id'];
 const ARTICLE_INSERT = ['code', 'name', 'description', 'art_no', 'category', 'brand', 'model', 'size', 'color', 'usage',
-  'label_text', 'unit', 'stock', 'min_stock', 'location_id', 'notes', 'archived', 'category_id', 'product_url'];
+  'label_text', 'unit', 'stock', 'min_stock', 'reorder_qty', 'location_id', 'notes', 'archived', 'category_id', 'product_url'];
 const ARTICLE_UPDATE = ['name', 'description', 'art_no', 'category', 'brand', 'model', 'size', 'color', 'usage',
-  'label_text', 'unit', 'min_stock', 'location_id', 'notes', 'archived', 'category_id', 'product_url'];
+  'label_text', 'unit', 'min_stock', 'reorder_qty', 'location_id', 'notes', 'archived', 'category_id', 'product_url'];
 const MACHINE_INSERT = ['code', 'name', 'category', 'brand', 'model', 'serial_no', 'inventory_no', 'home_location_id',
   'status', 'condition', 'condition_note', 'notes', 'archived', 'category_id', 'responsible_id', 'is_set', 'product_url'];
 const MACHINE_UPDATE = ['name', 'category', 'brand', 'model', 'serial_no', 'inventory_no', 'home_location_id',
   'condition', 'condition_note', 'notes', 'archived', 'category_id', 'responsible_id', 'is_set', 'product_url'];
 
 const REF_COLS = new Set(['parent_id', 'location_id', 'home_location_id', 'category_id', 'responsible_id', 'cover_photo_id']);
-const NUM_COLS = new Set(['stock', 'min_stock']);
+const NUM_COLS = new Set(['stock', 'min_stock', 'reorder_qty']);
 const BOOL_COLS = new Set(['archived', 'is_set']);
 const URL_RE = /^https?:\/\/[^\s]+$/i;
 const IMAGE_MIME = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/heic', 'image/heif'];
@@ -270,6 +270,7 @@ export function createApi({ LgrError, client } = {}) {
         const cn = constraintName(msg);
         if (/_code_key$/.test(cn) || /\(code\)/.test(details)) return E('duplicate_code');
         if (/one_open_per_machine/.test(cn)) return E('not_available', 'ausgeliehen');
+        if (/shopping_items_open_article/.test(cn)) return E('already_on_list');
         if (/short_code/.test(cn)) return E('duplicate_short_code');
         if (/categories_name/.test(cn)) return E('duplicate', 'category');
         return E('duplicate', cn || null);
@@ -1106,6 +1107,62 @@ export function createApi({ LgrError, client } = {}) {
       const rows = await q(sb.from('sites').delete().eq('id', id).select('id'));
       if (!rows || !rows.length) throw await zeroRowsError('sites', id);
     }),
+
+    // ---- Einkaufsliste (was gekauft werden muss; kein Bestellmodul) ----
+    // status 'open' = offen + bestellt (neueste zuerst), 'done' = erledigt/verworfen (die letzten 40)
+    listShopping: wrap(async ({ status = 'open' } = {}) => {
+      if (status === 'done') {
+        return (await q(sb.from('shopping_overview').select('*').in('status', ['erledigt', 'verworfen'])
+          .order('done_at', { ascending: false, nullsFirst: false }).order('id').limit(40))) || [];
+      }
+      return fetchAll(() => sb.from('shopping_overview').select('*').in('status', ['offen', 'bestellt'])
+        .order('created_at', { ascending: false }).order('id'));
+    }),
+    saveShoppingItem: wrap(async (obj) => {
+      if (!obj || typeof obj !== 'object') throw E('invalid_value');
+      const patch = {};
+      if (has(obj, 'name')) { patch.name = trimOrNull(obj.name); if (patch.name && patch.name.length > 200) throw E('invalid_value'); }
+      if (has(obj, 'qty')) {
+        const n = num(obj.qty);
+        if (Number.isNaN(n) || (n !== null && !(n > 0 && n < 1e9))) throw E('invalid_qty');
+        patch.qty = n;
+      }
+      if (has(obj, 'unit')) { patch.unit = trimOrNull(obj.unit); if (patch.unit && patch.unit.length > 20) throw E('invalid_value'); }
+      if (has(obj, 'note')) { patch.note = trimOrNull(obj.note); if (patch.note && patch.note.length > 500) throw E('invalid_value'); }
+      let id = obj.id;
+      if (!id) {
+        const articleId = obj.article_id || null;
+        if (articleId && !isUuid(articleId)) throw E('not_found');
+        if (!articleId && !patch.name) throw E('name_required');
+        // Name/Einheit setzt die Datenbank vom Artikel, wenn leer
+        const row = { ...patch, article_id: articleId, name: patch.name || '' };
+        id = (await q(sb.from('shopping_items').insert(row).select('id').single())).id;
+      } else {
+        if (!isUuid(id)) throw E('not_found');
+        if (has(patch, 'name') && !patch.name) throw E('name_required');
+        if (Object.keys(patch).length) {
+          const rows = await q(sb.from('shopping_items').update(patch).eq('id', id).select('id'));
+          if (!rows || !rows.length) throw await zeroRowsError('shopping_items', id);
+        }
+      }
+      const out = await getOne('shopping_overview', 'id', id);
+      if (!out) throw E('not_found');
+      return out;
+    }),
+    setShoppingStatus: wrap(async (id, status) => {
+      if (!isUuid(id)) throw E('not_found');
+      if (!['offen', 'bestellt', 'erledigt', 'verworfen'].includes(status)) throw E('invalid_status');
+      const rows = await q(sb.from('shopping_items').update({ status }).eq('id', id).select('id'));
+      if (!rows || !rows.length) throw await zeroRowsError('shopping_items', id);
+      return getOne('shopping_overview', 'id', id);
+    }),
+    deleteShoppingItem: wrap(async (id) => {
+      if (!isUuid(id)) throw E('not_found');
+      const rows = await q(sb.from('shopping_items').delete().eq('id', id).select('id'));
+      if (!rows || !rows.length) throw await zeroRowsError('shopping_items', id);
+    }),
+    // Entnahmen der letzten 90 Tage je Artikel: [{ article_id, used_90d, takes_90d, first_take_at, last_take_at }]
+    listConsumption: wrap(async () => fetchAll(() => sb.from('article_consumption').select('*').order('article_id'))),
 
     listFloorPlans: wrap(async () => (await q(sb.from('floor_plan_overview').select('*').order('sort').order('name').order('id'))) || []),
     saveFloorPlan: wrap(async (obj) => {

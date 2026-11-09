@@ -535,6 +535,40 @@ create table if not exists public.org_tasks (
 );
 create index if not exists org_tasks_location_idx on public.org_tasks (location_id, status);
 
+-- Einkaufsliste: was gekauft werden muss (Papier, Toner, Stifte …). Bewusst KEIN Einkaufs-/Bestellmodul:
+-- keine Lieferanten, Preise, Bestellungen oder Rechnungen – nur «was, wie viel, wer hat es besorgt».
+-- Artikel mit Mindestbestand kommen automatisch auf die Liste, sobald eine Entnahme sie darunter bringt
+-- (Trigger article_shopping_sync); ein Zugang über den Mindestbestand hakt sie wieder ab.
+alter table public.articles add column if not exists reorder_qty numeric;
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'articles_reorder_qty_chk') then
+    alter table public.articles add constraint articles_reorder_qty_chk
+      check (reorder_qty is null or (reorder_qty > 0 and reorder_qty < 1e9));
+  end if;
+end $$;
+create table if not exists public.shopping_items (
+  id          uuid primary key default gen_random_uuid(),
+  article_id  uuid references public.articles(id) on delete cascade,
+  name        text not null check (length(trim(name)) between 1 and 200),
+  qty         numeric check (qty is null or (qty > 0 and qty < 1e9)),
+  unit        text check (unit is null or length(unit) <= 20),
+  note        text check (note is null or length(note) <= 500),
+  status      text not null default 'offen' check (status in ('offen','bestellt','erledigt','verworfen')),
+  source      text not null default 'manuell' check (source in ('manuell','automatisch')),
+  created_by  uuid references public.profiles(id),
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now(),
+  ordered_by  uuid references public.profiles(id),
+  ordered_at  timestamptz,
+  done_by     uuid references public.profiles(id),
+  done_at     timestamptz
+);
+-- je Artikel höchstens ein offener Eintrag (offen oder bestellt)
+create unique index if not exists shopping_items_open_article_uniq on public.shopping_items (article_id)
+  where article_id is not null and status in ('offen','bestellt');
+create index if not exists shopping_items_status_idx on public.shopping_items (status, created_at desc);
+
 -- Inventur für einen bestimmten Raum/Lagerort (optional)
 alter table public.inventories add column if not exists location_id uuid references public.locations(id) on delete set null;
 
@@ -835,6 +869,72 @@ drop trigger if exists sites_updated on public.sites;
 create trigger sites_updated before update on public.sites for each row execute function public.set_updated_at();
 drop trigger if exists sites_audit on public.sites;
 create trigger sites_audit after insert or update or delete on public.sites for each row execute function public.audit_row();
+
+-- Einkaufsliste: Name/Einheit vom Artikel, Zeitstempel je Status (wer hat bestellt / besorgt)
+create or replace function public.shopping_item_defaults() returns trigger
+language plpgsql set search_path = public as $$
+declare v_a public.articles;
+begin
+  if tg_op = 'INSERT' then
+    new.created_by := auth.uid(); new.created_at := now();
+    new.ordered_by := null; new.ordered_at := null; new.done_by := null; new.done_at := null;
+  elsif new.article_id is distinct from old.article_id or new.source is distinct from old.source then
+    raise exception 'LGR:invalid_input';
+  end if;
+  if new.article_id is not null then
+    select * into v_a from public.articles where id = new.article_id;
+    if not found then raise exception 'LGR:not_found'; end if;
+    if nullif(trim(new.name), '') is null then new.name := left(v_a.name, 200); end if;
+    if nullif(trim(new.unit), '') is null then new.unit := v_a.unit; end if;
+  end if;
+  new.name := trim(new.name);
+  new.unit := nullif(trim(new.unit), '');
+  new.note := nullif(trim(new.note), '');
+  if tg_op = 'INSERT' or new.status is distinct from old.status then
+    if new.status = 'offen' then new.ordered_by := null; new.ordered_at := null; end if;
+    if new.status = 'bestellt' then new.ordered_by := auth.uid(); new.ordered_at := now(); end if;
+    if new.status in ('erledigt','verworfen') then new.done_by := auth.uid(); new.done_at := now();
+    else new.done_by := null; new.done_at := null; end if;
+  else
+    new.ordered_by := old.ordered_by; new.ordered_at := old.ordered_at;
+    new.done_by := old.done_by; new.done_at := old.done_at;
+  end if;
+  return new;
+end $$;
+drop trigger if exists shopping_items_defaults on public.shopping_items;
+create trigger shopping_items_defaults before insert or update on public.shopping_items
+  for each row execute function public.shopping_item_defaults();
+drop trigger if exists shopping_items_updated on public.shopping_items;
+create trigger shopping_items_updated before update on public.shopping_items for each row execute function public.set_updated_at();
+drop trigger if exists shopping_items_audit on public.shopping_items;
+create trigger shopping_items_audit after insert or update or delete on public.shopping_items for each row execute function public.audit_row();
+
+-- Bestand eines Artikels mit Mindestbestand fällt (Entnahme, Korrektur, Inventur) auf/unter den Mindestbestand
+-- → automatisch auf die Einkaufsliste (Menge = Nachkaufmenge oder bis zum doppelten Mindestbestand).
+-- Steigt er (Zugang) über den Mindestbestand → offene Einträge des Artikels gelten als erledigt.
+-- Das Setzen des Mindestbestands allein fügt nichts hinzu (ungezählte Artikel stehen auf 0) – dafür zeigt die
+-- Einkaufsliste «Vorschläge», die man mit einem Tipp übernimmt.
+create or replace function public.article_shopping_sync() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare v_skip text := coalesce(current_setting('lgr.skip_audit', true), '');
+begin
+  if new.archived or new.min_stock is null or new.stock = old.stock then return null; end if;
+  perform set_config('lgr.skip_audit', '', true);   -- Einträge der Einkaufsliste immer protokollieren
+  if new.stock < old.stock and new.stock <= new.min_stock then
+    insert into public.shopping_items (article_id, name, qty, unit, source)
+    values (new.id, left(new.name, 200),
+            coalesce(new.reorder_qty, least(greatest(ceil(new.min_stock * 2 - new.stock), 1), 999999999)), new.unit, 'automatisch')
+    on conflict do nothing;
+  elsif new.stock > old.stock and new.stock > new.min_stock then
+    update public.shopping_items set status = 'erledigt'
+     where article_id = new.id and status in ('offen','bestellt');
+  end if;
+  perform set_config('lgr.skip_audit', v_skip, true);
+  return null;
+end $$;
+drop trigger if exists articles_shopping_sync on public.articles;
+create trigger articles_shopping_sync after update of stock on public.articles
+  for each row execute function public.article_shopping_sync();
 
 -- Der Standort gilt nur für Räume (oberste Lagerorte): wird ein Lagerort untergeordnet, fällt sein Standort weg
 create or replace function public.location_site_top_only() returns trigger
@@ -1619,7 +1719,7 @@ end $$;
 -- =====================================================================
 --  Ansichten (respektieren die Zugriffsregeln des angemeldeten Benutzers)
 -- =====================================================================
-drop view if exists public.site_overview, public.floor_plan_overview,
+drop view if exists public.article_consumption, public.shopping_overview, public.site_overview, public.floor_plan_overview,
                     public.org_stats, public.space_overview, public.org_task_overview, public.detection_overview,
                     public.photo_overview, public.category_paths,
                     public.movement_overview, public.loan_overview, public.article_overview,
@@ -1799,6 +1899,30 @@ select s.*,
        (select count(*) from public.floor_plans f where f.site_id = s.id) as plan_count
   from public.sites s;
 
+create view public.shopping_overview with (security_invoker = true) as
+select s.*,
+       a.code as article_code, a.stock as article_stock, a.min_stock as article_min_stock,
+       a.reorder_qty as article_reorder_qty, a.unit as article_unit, a.archived as article_archived,
+       a.product_url as article_product_url, a.location_path as article_location_path,
+       a.location_code_path as article_location_code_path, a.photo_path as article_photo_path,
+       cu.full_name as created_by_name, ou.full_name as ordered_by_name, du.full_name as done_by_name
+  from public.shopping_items s
+  left join public.article_overview a on a.id = s.article_id
+  left join public.profiles cu on cu.id = s.created_by
+  left join public.profiles ou on ou.id = s.ordered_by
+  left join public.profiles du on du.id = s.done_by;
+
+-- Verbrauch je Artikel (Entnahmen der letzten 90 Tage) – Grundlage für «reicht noch ca. …» (Schätzung in der App)
+create view public.article_consumption with (security_invoker = true) as
+select m.article_id,
+       sum(-m.qty)       as used_90d,
+       count(*)          as takes_90d,
+       min(m.created_at) as first_take_at,
+       max(m.created_at) as last_take_at
+  from public.stock_movements m
+ where m.type = 'entnahme' and m.created_at > now() - interval '90 days'
+ group by m.article_id;
+
 create view public.org_task_overview with (security_invoker = true) as
 select t.*, lp.path as location_path, lp.root_id,
        au.full_name as assigned_name, cu.full_name as created_by_name, du.full_name as done_by_name
@@ -1881,7 +2005,8 @@ select
   (select count(*) from (select obj_key from public.detections where status in ('offen', 'spaeter')
                           group by obj_key having count(*) > 1) g)                              as duplicate_groups,
   (select count(*) from public.org_tasks where status = 'offen')                                as tasks_open,
-  (select count(*) from public.stock_movements where created_at > now() - interval '7 days')    as movements_7d;
+  (select count(*) from public.stock_movements where created_at > now() - interval '7 days')    as movements_7d,
+  (select count(*) from public.shopping_items where status in ('offen', 'bestellt'))             as shopping_open;
 
 
 -- =====================================================================
@@ -1911,6 +2036,7 @@ grant update (name, type, parent_id, notes, archived) on public.locations to aut
 grant insert, delete on public.articles to authenticated;
 grant update (name, description, art_no, category, brand, model, size, color, usage, label_text, unit,
               min_stock, location_id, notes, archived) on public.articles to authenticated;
+grant update (reorder_qty) on public.articles to authenticated;
 grant insert, delete on public.machines to authenticated;
 grant update (name, category, brand, model, serial_no, inventory_no, home_location_id,
               condition, condition_note, notes, archived) on public.machines to authenticated;
@@ -2093,6 +2219,24 @@ create policy sites_update on public.sites for update to authenticated using ((s
 drop policy if exists sites_delete on public.sites;
 create policy sites_delete on public.sites for delete to authenticated using ((select public.is_admin()));
 
+-- Einkaufsliste: gemeinsame Liste – alle aktiven Mitarbeiter dürfen eintragen und abhaken;
+-- löschen nur der eigene Eintrag oder Lagerverantwortliche/Admins (sonst «verworfen», bleibt im Protokoll)
+alter table public.shopping_items enable row level security;
+revoke insert, update, delete on public.shopping_items from authenticated;
+grant insert (article_id, name, qty, unit, note) on public.shopping_items to authenticated;
+grant update (name, qty, unit, note, status) on public.shopping_items to authenticated;
+grant delete on public.shopping_items to authenticated;
+drop policy if exists shopping_read on public.shopping_items;
+create policy shopping_read on public.shopping_items for select to authenticated using ((select public.is_active_user()));
+drop policy if exists shopping_insert on public.shopping_items;
+create policy shopping_insert on public.shopping_items for insert to authenticated with check ((select public.is_active_user()));
+drop policy if exists shopping_update on public.shopping_items;
+create policy shopping_update on public.shopping_items for update to authenticated
+  using ((select public.is_active_user())) with check ((select public.is_active_user()));
+drop policy if exists shopping_delete on public.shopping_items;
+create policy shopping_delete on public.shopping_items for delete to authenticated
+  using ((select public.is_active_user()) and (created_by = (select auth.uid()) or (select public.is_staff())));
+
 -- Funktionen: nur angemeldete Benutzer (nicht anonym) dürfen sie aufrufen
 do $$
 declare f record;
@@ -2110,14 +2254,16 @@ begin
                          'current_role_name','is_active_user','is_staff','is_admin',
                          'handle_new_user','set_updated_at','set_created_by','assign_code','check_location_parent',
                          'machine_insert_guard','article_initial_movement','audit_row',
-                         'promote_bootstrap_admin','handle_user_confirmed','location_site_top_only')
+                         'promote_bootstrap_admin','handle_user_confirmed','location_site_top_only',
+                         'shopping_item_defaults','article_shopping_sync')
   loop
     execute format('revoke execute on function %s from public, anon, authenticated', f.sig);
     if f.proname not in ('handle_new_user','set_updated_at','set_created_by','assign_code','check_location_parent',
                          'machine_insert_guard','article_initial_movement','audit_row',
                          'promote_bootstrap_admin','handle_user_confirmed',
                          'check_category_parent','photo_insert_defaults','photo_delete_guard','org_task_status','product_summary',
-                         'location_root','category_by_path','jnum','location_site_top_only') then   -- nur intern in anderen Funktionen
+                         'location_root','category_by_path','jnum','location_site_top_only',
+                         'shopping_item_defaults','article_shopping_sync') then   -- nur intern in anderen Funktionen
       execute format('grant execute on function %s to authenticated', f.sig);
     end if;
   end loop;

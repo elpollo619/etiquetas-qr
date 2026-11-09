@@ -10,6 +10,7 @@ import {
 } from '../util.js';
 import * as media from '../media.js';
 import * as labels from '../labels.js';
+import { consumptionMap, coverDays, coverText, coverSpanDays, suggestQty } from '../consumption.js';
 import { categoryOptionsHtml, categorySubtreeIds, confidencePill, sourceLabel } from '../org-common.js';
 
 // ---------------------------------------------------------------------------
@@ -72,6 +73,9 @@ registerStrings({
     'articles.stockNow': 'Aktueller Bestand',
     'articles.minStockLine': 'Mindestbestand {qty}',
     'articles.lowAlert': 'Wenig Bestand: Der Mindestbestand von {qty} ist erreicht. Bitte nachbestellen.',
+    'articles.f.reorderQty': 'Nachkaufmenge', 'articles.h.reorderQty': 'So viel kommt auf die Einkaufsliste, wenn der Mindestbestand erreicht ist (z. B. 1 Karton = 5 Pkg). Leer = bis zum doppelten Mindestbestand.',
+    'articles.reorderLine': 'Nachkaufmenge {qty}', 'articles.toShop': 'Auf die Einkaufsliste', 'articles.onShop': 'Steht auf der Einkaufsliste',
+    'articles.onShopOpen': 'Zur Einkaufsliste', 'articles.shopAdded': '«{name}» steht jetzt auf der Einkaufsliste.',
     'articles.take': 'Entnahme',
     'articles.add': 'Zugang',
     'articles.move': 'Umlagern',
@@ -223,6 +227,9 @@ registerStrings({
     'articles.stockNow': 'Stock atual',
     'articles.minStockLine': 'Stock mínimo {qty}',
     'articles.lowAlert': 'Stock baixo: atingiu-se o stock mínimo de {qty}. É preciso encomendar.',
+    'articles.f.reorderQty': 'Quantidade a repor', 'articles.h.reorderQty': 'Quanto entra na lista de compras quando se atinge o stock mínimo (p. ex. 1 caixa = 5 pacotes). Vazio = até ao dobro do stock mínimo.',
+    'articles.reorderLine': 'Quantidade a repor {qty}', 'articles.toShop': 'Para a lista de compras', 'articles.onShop': 'Está na lista de compras',
+    'articles.onShopOpen': 'Ver lista de compras', 'articles.shopAdded': '«{name}» está agora na lista de compras.',
     'articles.take': 'Saída',
     'articles.add': 'Entrada',
     'articles.move': 'Transferir',
@@ -374,6 +381,9 @@ registerStrings({
     'articles.stockNow': 'Stock actual',
     'articles.minStockLine': 'Stock mínimo {qty}',
     'articles.lowAlert': 'Poco stock: se ha alcanzado el stock mínimo de {qty}. Hay que pedir más.',
+    'articles.f.reorderQty': 'Cantidad a reponer', 'articles.h.reorderQty': 'Lo que entra en la lista de compras al llegar al stock mínimo (p. ej. 1 caja = 5 paquetes). Vacío = hasta el doble del stock mínimo.',
+    'articles.reorderLine': 'Cantidad a reponer {qty}', 'articles.toShop': 'A la lista de compras', 'articles.onShop': 'Está en la lista de compras',
+    'articles.onShopOpen': 'Ver lista de compras', 'articles.shopAdded': '«{name}» está ahora en la lista de compras.',
     'articles.take': 'Retirada',
     'articles.add': 'Entrada',
     'articles.move': 'Trasladar',
@@ -1116,6 +1126,13 @@ async function cardView(ctx) {
   } catch (err) { showError(ctx, err); return; }
   if (!a) { showNotFound(ctx, code); return; }
   ctx.setTitle(a.name);
+  let shopEntry = null, consRow = null;
+  if (active && !a.archived) {
+    const [shop, cons] = await Promise.all([api.listShopping({ status: 'open' }).catch(() => []), api.listConsumption().catch(() => [])]);
+    shopEntry = (shop || []).find((x) => x.article_id === a.id) || null;
+    consRow = consumptionMap(cons).get(a.id) || null;
+  }
+  const cover = coverText(coverDays(a, consRow));
 
   const stock = Number(a.stock) || 0;
   const low = !!a.low_stock;
@@ -1168,7 +1185,9 @@ async function cardView(ctx) {
           <span style="font-size:44px;font-weight:750;line-height:1.05;font-variant-numeric:tabular-nums">${esc(fmtQty(stock, a.unit))}</span>
           ${low ? `<span class="pill pill-danger">${esc(t('articles.low'))}</span>` : ''}
         </div>
-        ${hasMin ? `<div class="muted" style="margin-top:4px">${esc(t('articles.minStockLine', { qty: fmtQty(a.min_stock, a.unit) }))}</div>` : ''}
+        ${hasMin ? `<div class="muted" style="margin-top:4px">${esc([t('articles.minStockLine', { qty: fmtQty(a.min_stock, a.unit) }),
+          hasValue(a.reorder_qty) ? t('articles.reorderLine', { qty: fmtQty(a.reorder_qty, a.unit) }) : ''].filter(Boolean).join(' · '))}</div>` : ''}
+        ${cover ? `<div class="muted small" style="margin-top:2px" title="${esc(t('cover.title', { takes: fmtNum(consRow.takes_90d), used: fmtQty(consRow.used_90d, a.unit), days: fmtNum(coverSpanDays(a)) }))}">${icon('clock')} ${esc(cover)}</div>` : ''}
       </div>
       ${low ? `<div class="alert warn">${icon('alert')}<span>${esc(t('articles.lowAlert', { qty: fmtQty(a.min_stock, a.unit) }))}</span></div>` : ''}
       ${a.archived ? `<div class="alert">${icon('box')}<span>${esc(t('articles.archivedNote'))}</span></div>` : ''}
@@ -1179,6 +1198,9 @@ async function cardView(ctx) {
         <button type="button" class="btn primary block" data-act="entnahme">${icon('minus')}${esc(t('articles.take'))}</button>
         <button type="button" class="btn block" data-act="zugang">${icon('plus')}${esc(t('articles.add'))}</button>
       </div>
+      <div style="margin-top:10px">${shopEntry
+        ? `<a class="btn block" href="#/einkauf">${icon('cart')}${esc(t('articles.onShop'))}${shopEntry.qty ? ' · ' + esc(fmtQty(shopEntry.qty, shopEntry.unit)) : ''}</a>`
+        : `<button type="button" class="btn block" data-act="shop">${icon('cart')}${esc(t('articles.toShop'))}</button>`}</div>
     </div>` : ''}
 
     ${staff ? `<section class="section" aria-labelledby="art-manage-h">
@@ -1252,6 +1274,14 @@ async function cardView(ctx) {
     if (act === 'entnahme' || act === 'zugang') { if (await stockSheet(ctx, a, act)) ctx.reload(); }
     else if (act === 'umlagerung') { if (await moveSheet(ctx, a)) ctx.reload(); }
     else if (act === 'korrektur') { if (await correctSheet(ctx, a)) ctx.reload(); }
+    else if (act === 'shop') {
+      b.disabled = true;
+      try {
+        await api.saveShoppingItem({ article_id: a.id, qty: hasMin ? suggestQty(a) : (hasValue(a.reorder_qty) ? Number(a.reorder_qty) : null) });
+        toast(t('articles.shopAdded', { name: a.name }));
+        ctx.reload();
+      } catch (err) { toast(errorText(err), 'error'); b.disabled = false; }
+    }
     else if (act === 'label') printLabels(() => [labels.labelItem('article', a)]);
     else if (act === 'archive') await setArchived(ctx, a, !a.archived);
     else if (act === 'delete') await removeArticle(ctx, a);
@@ -1582,6 +1612,7 @@ async function formView(ctx, mode) {
         </select>
       </div>
       ${field('min_stock', t('articles.f.minStock'), { hint: t('articles.h.minStock'), attrs: 'inputmode="decimal" autocomplete="off"' })}
+      ${field('reorder_qty', t('articles.f.reorderQty'), { hint: t('articles.h.reorderQty'), attrs: 'inputmode="decimal" autocomplete="off"' })}
       ${field('brand', t('articles.f.brand'), { attrs: 'maxlength="100"' })}
       ${field('model', t('articles.f.model'), { attrs: 'maxlength="100"' })}
       ${field('art_no', t('articles.f.artNo'), { attrs: 'maxlength="100" autocomplete="off"' })}
@@ -1628,6 +1659,13 @@ async function formView(ctx, mode) {
       if (minStock === null || minStock < 0) { fail(t('err.invalid_qty'), 'min_stock'); return; }
       minStock = round3(minStock);
     }
+    // Nachkaufmenge nur senden, wenn ausgefüllt oder bisher gesetzt (ältere Datenbank kennt die Spalte evtl. noch nicht)
+    let reorderQty;
+    if (clean(d.reorder_qty)) {
+      reorderQty = readNum(d.reorder_qty);
+      if (reorderQty === null || !(reorderQty > 0)) { fail(t('err.invalid_qty'), 'reorder_qty'); return; }
+      reorderQty = round3(reorderQty);
+    } else if (hasValue(v.reorder_qty) && !isNew) reorderQty = null;
     const urlRaw = urlInput(d.product_url);
     if (urlRaw && !safeUrl(urlRaw)) { fail(t('articles.productUrlInvalid'), 'product_url'); return; }
     const obj = {
@@ -1643,6 +1681,7 @@ async function formView(ctx, mode) {
       label_text: nullIfEmpty(d.label_text),
       unit: u,
       min_stock: minStock,
+      ...(reorderQty !== undefined ? { reorder_qty: reorderQty } : {}),
       location_id: d.location_id || null,
       notes: multi(d.notes),
     };

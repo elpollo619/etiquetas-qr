@@ -243,6 +243,7 @@ const ICONS = {
   history: '<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/>',
   more: '<circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
+  cart: '<circle cx="9" cy="20" r="1.4"/><circle cx="18" cy="20" r="1.4"/><path d="M2.5 3.5h2.8l2.4 11.6a1 1 0 0 0 1 .8h9.4a1 1 0 0 0 1-.8L21 7.5H6.1"/>',
   minus: '<path d="M5 12h14"/>',
   back: '<path d="M15 18l-6-6 6-6"/>',
   chevron: '<path d="M9 18l6-6-6-6"/>',

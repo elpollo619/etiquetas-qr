@@ -5,7 +5,7 @@ import { esc, icon, toast, errorText, can, routeForCode, parseScanned, sheet } f
 import { openScanner } from './scanner.js';
 import './theme.js';
 
-const VIEW_MODULES = ['dashboard', 'organize', 'organize-review', 'search', 'categories', 'machines', 'articles', 'locations', 'inventory', 'employees', 'audit', 'labels-page', 'profile'];
+const VIEW_MODULES = ['dashboard', 'organize', 'organize-review', 'search', 'categories', 'machines', 'articles', 'locations', 'inventory', 'employees', 'audit', 'labels-page', 'profile', 'stock-tools', 'shopping'];
 const routes = [];
 let me = null;                // eigenes Profil
 let recoveryMode = false;     // Passwort-Zurücksetzen über E-Mail-Link
@@ -93,6 +93,9 @@ function navItems() {
     { path: 'maschinen', ic: 'machine', label: t('nav.machines') },
     { path: 'ausgeliehen', ic: 'handoff', label: t('nav.loans') },
     { path: 'artikel', ic: 'box', label: t('nav.articles') },
+    { path: 'verbrauch', ic: 'list', label: t('nav.consumables') },
+    { path: 'einkauf', ic: 'cart', label: t('nav.shopping') },
+    staff && { path: 'einraeumen', ic: 'move', label: t('nav.putaway') },
     { path: 'lagerorte', ic: 'location', label: t('nav.locations') },
     { path: 'inventur', ic: 'clipboard', label: t('nav.inventory') },
     { path: 'kategorien', ic: 'layers', label: t('nav.categories') },
