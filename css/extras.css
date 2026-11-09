@@ -148,3 +148,4 @@ details[data-done-sec] > summary { cursor: pointer; list-style: revert; }
   .shop-btns { max-width: none; width: 100%; justify-content: flex-start; padding-left: 0; }
   .shop-btns .btn { min-height: 40px; }
 }
+.shop-list > li:not(.list-item) { list-style: none; }
