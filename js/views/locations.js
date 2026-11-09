@@ -10,7 +10,7 @@ import {
 } from '../util.js';
 import * as media from '../media.js';
 import * as labels from '../labels.js';
-import { LOCATION_TYPES, SPACE_PRESETS, suggestShortCode, normShortCode } from '../org-common.js';
+import { LOCATION_TYPES, SPACE_PRESETS, suggestShortCode, normShortCode, siteOptionsHtml } from '../org-common.js';
 
 // ---------------------------------------------------------------------------
 // Texte
@@ -709,6 +709,7 @@ async function cardView(ctx) {
         ${loc.code_path ? `<dt>${esc(t('locations.codePath'))}</dt><dd class="mono">${esc(loc.code_path)}</dd>` : ''}
         <dt>${esc(t('locations.internalCode'))}</dt><dd class="mono">${esc(loc.code)}</dd>
         ${loc.responsible_name ? `<dt>${esc(t('locations.f.responsible'))}</dt><dd>${esc(loc.responsible_name)}</dd>` : ''}
+        ${loc.site_name ? `<dt>${esc(t('site.label'))}</dt><dd>${esc(loc.site_name)}</dd>` : ''}
       </dl>
       ${loc.code_path ? `<p class="hint" style="margin:0">${esc(t('locations.codeExplain'))}</p>` : ''}
       ${loc.notes ? `<div style="white-space:pre-line;overflow-wrap:anywhere">${esc(loc.notes)}</div>` : ''}
@@ -824,11 +825,13 @@ async function formView(ctx, mode) {
   let loc = null;
   let all = [];
   let profiles = [];
+  let sites = [];
   try {
-    [loc, all, profiles] = await Promise.all([
+    [loc, all, profiles, sites] = await Promise.all([
       isNew ? Promise.resolve(null) : api.getLocationByCode(code),
       api.listLocations({ includeArchived: true }),
       safeList(() => api.listProfiles()),
+      safeList(() => (typeof api.listSites === 'function' ? api.listSites() : [])),
     ]);
   } catch (err) { showError(ctx, err); return; }
   if (!isNew && !loc) { showNotFound(ctx, code); return; }
@@ -869,6 +872,8 @@ async function formView(ctx, mode) {
     + (respId && !people.some((p) => p.id === respId) ? `<option value="${esc(respId)}" selected>${esc(loc.responsible_name || '?')}</option>` : '')
     + people.map((p) => `<option value="${esc(p.id)}"${p.id === respId ? ' selected' : ''}>${esc(p.full_name || p.email || '–')}</option>`).join('');
   const initialShort = loc ? (loc.short_code || '') : suggestFor(type, parentId, '');
+  sites = sites || [];
+  const siteId = loc ? (loc.site_id || '') : (sites.find((x) => x.id === clean(queryParam(ctx, 'site') || '')) || {}).id || '';
 
   ctx.el.innerHTML = `<div class="page">
     <a class="back-link" href="${back}">${icon('back')}${esc(t('btn.back'))}</a>
@@ -912,6 +917,11 @@ async function formView(ctx, mode) {
         <div class="hint" id="lf-parent-h">${esc(t('locations.h.parent'))}</div>
         <div class="hint" id="lf-preview" data-preview aria-live="polite"></div>
       </div>
+      ${sites.length ? `<div class="field full" data-sitefield${parentId ? ' hidden' : ''}>
+        <label for="lf-site">${esc(t('site.label'))}</label>
+        <select id="lf-site" name="site_id" aria-describedby="lf-site-h">${siteOptionsHtml(sites, siteId)}</select>
+        <div class="hint" id="lf-site-h">${esc(t('site.hint'))}</div>
+      </div>` : ''}
       <div class="field full">
         <label for="lf-notes">${esc(t('locations.f.notes'))}</label>
         <textarea id="lf-notes" name="notes">${esc(loc && loc.notes ? loc.notes : '')}</textarea>
@@ -969,6 +979,8 @@ async function formView(ctx, mode) {
   parentSel.addEventListener('change', () => {
     const p = parentSel.value ? tree.byId.get(parentSel.value) : null;
     if (!typeTouched) typeSel.value = p ? (NEXT_TYPE[p.type] || 'box') : 'lager';
+    const sf = form.querySelector('[data-sitefield]');
+    if (sf) sf.hidden = !!p;   // Standort nur für Räume (oberste Ebene)
     updatePreview();
     updateShort();
   });
@@ -1003,6 +1015,7 @@ async function formView(ctx, mode) {
       name, type: TYPES.includes(d.type) ? d.type : 'lager', parent_id: d.parent_id || null, notes: multi(d.notes),
       short_code: short || null, responsible_id: d.responsible_id || null,
     };
+    if (sites.length) obj.site_id = obj.parent_id ? null : (d.site_id || null);
     if (short && siblings(obj.parent_id).some((l) => l.short_code === short)) {
       fail(duplicateMsg(short, obj.parent_id), 'short_code');
       return;

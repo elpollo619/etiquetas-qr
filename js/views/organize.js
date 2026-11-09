@@ -12,7 +12,7 @@ import {
 import {
   LOCATION_TYPES, SPACE_PRESETS, suggestShortCode, normShortCode, orgStatusPill, confidencePill, confidenceLabel,
   detectionStatusLabel, kindLabel, photoStatusLabel, taskStatusLabel, sourceLabel, locationSubtreeIds, locationDisplayCode,
-  ORG_STATUSES, orgStatusLabel, sha256Hex,
+  ORG_STATUSES, orgStatusLabel, sha256Hex, siteOptionsHtml,
 } from '../org-common.js';
 import * as labels from '../labels.js';
 
@@ -1191,14 +1191,22 @@ async function hubView(ctx) {
   const staff = can(user, 'staff');
   ctx.setTitle(t('organize.title'));
   ctx.el.innerHTML = loadingHtml();
-  let stats, spaces, plans;
+  let stats, spaces, plans, sites;
   try {
-    [stats, spaces, plans] = await Promise.all([api.orgStats(), api.listSpaces(),
+    [stats, spaces, plans, sites] = await Promise.all([api.orgStats(), api.listSpaces(),
       // Gebäudeplan ist nicht kritisch: ohne Pläne-Methode (oder bei Fehler) bleibt die Karte weg
-      typeof api.listFloorPlans === 'function' ? api.listFloorPlans().catch(() => null) : null]);
+      typeof api.listFloorPlans === 'function' ? api.listFloorPlans().catch(() => null) : null,
+      typeof api.listSites === 'function' ? api.listSites().catch(() => []) : []]);
   } catch (err) { showError(ctx, err); return; }
   stats = stats || {};
   spaces = spaces || [];
+  sites = sites || [];
+  // Standorte (Adressen): Räume gruppieren; Filter über ?site=<id> bzw. ?site=none
+  const siteById = new Map(sites.map((x) => [x.id, x]));
+  const groupOf = (sp) => (sp.site_id && siteById.has(sp.site_id) ? sp.site_id : 'none');
+  const siteQ = qget(ctx, 'site');
+  const curSite = siteQ === 'none' || siteById.has(siteQ) ? siteQ : null;
+  const shown = curSite ? spaces.filter((sp) => groupOf(sp) === curSite) : spaces;
   const S = (k) => num(stats[k]);
   const openDet = S('detections_open');
 
@@ -1253,7 +1261,9 @@ async function hubView(ctx) {
 
   // Karte «Gebäudeplan» (vor den Raumkarten); für Mitarbeiter nur, wenn es Pläne gibt
   let planCard = '';
-  if (Array.isArray(plans) && (plans.length || staff)) {
+  // Mit Adress-Filter nur die Pläne dieser Adresse
+  if (Array.isArray(plans) && curSite) plans = plans.filter((p) => (p.site_id && siteById.has(p.site_id) ? p.site_id : 'none') === curSite);
+  if (Array.isArray(plans) && (plans.length || (staff && !curSite))) {
     const areas = plans.reduce((s, p) => s + num(p.area_count), 0);
     const linked = plans.reduce((s, p) => s + num(p.linked_count), 0);
     planCard = `<article class="org-space org-fp-card">
@@ -1261,11 +1271,33 @@ async function hubView(ctx) {
         ? thumbHtml(plans[0].photo_path, t('organize.fp.planAlt', { name: plans[0].name }), 'org-space-img org-fp-thumb', 'layers')
         : `<div class="org-space-img org-noimg" aria-hidden="true">${icon('layers')}</div>`}</div>
       <div class="org-space-body">
-        <h3><a class="org-space-link" href="#/organisieren/plan">${icon('layers')} ${esc(t('organize.fp.title'))}</a></h3>
+        <h3><a class="org-space-link" href="#/organisieren/plan${plans.length && curSite ? '?plan=' + enc(plans[0].id) : ''}">${icon('layers')} ${esc(t('organize.fp.title'))}</a></h3>
         <div class="small muted">${esc(plans.length ? t('organize.fp.cardN', { n: fmtNum(plans.length), linked: fmtNum(linked), areas: fmtNum(areas) }) : t('organize.fp.cardNone'))}</div>
         ${plans.length ? `<div class="row">${plans.map((p) => `<span class="pill pill-muted">${esc(p.name)}</span>`).join('')}</div>` : ''}
       </div>
     </article>`;
+  }
+
+  const countIn = (g) => spaces.filter((sp) => groupOf(sp) === g).length;
+  const noneN = countIn('none');
+  const chip = (href, label, on) => `<a class="btn sm${on ? ' primary' : ''}" href="${esc(href)}"${on ? ' aria-current="page"' : ''}>${esc(label)}</a>`;
+  const siteNav = sites.length ? `<nav class="row org-site-nav" aria-label="${esc(t('site.manage'))}">
+      ${chip('#/organisieren', `${t('site.all')} (${fmtNum(spaces.length)})`, !curSite)}
+      ${sites.map((x) => chip('#/organisieren?site=' + enc(x.id), `${x.name} (${fmtNum(countIn(x.id))})`, curSite === x.id)).join('')}
+      ${noneN ? chip('#/organisieren?site=none', `${t('site.noneGroup')} (${fmtNum(noneN)})`, curSite === 'none') : ''}
+    </nav>` : '';
+  const groupHead = (g) => {
+    const x = siteById.get(g);
+    return `<h3 class="org-site-h">${icon('pin')}<span>${esc(x ? x.name : t('site.noneGroup'))}</span>${x && x.address && x.address !== x.name ? `<small class="muted">${esc(x.address)}</small>` : ''}</h3>`;
+  };
+  let cardsHtml;
+  if (!sites.length) cardsHtml = planCard || shown.length ? `<div class="org-spaces">${planCard}${shown.map(spaceCard).join('')}</div>` : '';
+  else {
+    const order = curSite ? [curSite] : [...sites.map((x) => x.id), 'none'];
+    cardsHtml = (planCard ? `<div class="org-spaces">${planCard}</div>` : '') + order.map((g) => {
+      const list = shown.filter((sp) => groupOf(sp) === g);
+      return list.length ? `<div class="org-site-group">${groupHead(g)}<div class="org-spaces">${list.map(spaceCard).join('')}</div></div>` : '';
+    }).join('');
   }
 
   ctx.el.innerHTML = `<div class="page org">
@@ -1288,9 +1320,15 @@ async function hubView(ctx) {
       <div class="stats org-stats">${tiles.map(tileHtml).join('')}</div>
     </section>
     <section class="section" aria-labelledby="org-sp-h">
-      <div class="section-head"><h2 id="org-sp-h">${esc(t('organize.spaces'))} (${fmtNum(spaces.length)})</h2>
-        ${staff ? `<button type="button" class="btn sm" data-add-space>${icon('plus')}${esc(t('organize.addSpace'))}</button>` : ''}</div>
-      ${planCard || spaces.length ? `<div class="org-spaces">${planCard}${spaces.map(spaceCard).join('')}</div>` : ''}
+      <div class="section-head"><h2 id="org-sp-h">${esc(t('organize.spaces'))} (${fmtNum(shown.length)})</h2>
+        <div class="row">
+          ${staff || sites.length ? `<button type="button" class="btn sm" data-sites>${icon('pin')}${esc(t('site.manage'))}</button>` : ''}
+          ${staff ? `<button type="button" class="btn sm" data-add-space>${icon('plus')}${esc(t('organize.addSpace'))}</button>` : ''}
+        </div></div>
+      ${siteNav}
+      ${cardsHtml}
+      ${curSite && !shown.length && spaces.length ? emptyHtml(t('site.noRooms'), staff
+          ? `<button type="button" class="btn primary" data-add-space>${icon('plus')}${esc(t('organize.addSpace'))}</button>` : '') : ''}
       ${spaces.length ? '' : emptyHtml(t(staff ? 'organize.noSpaces' : 'organize.noSpacesRead'), staff
           ? `<button type="button" class="btn primary" data-add-space>${icon('plus')}${esc(t('organize.addSpace'))}</button>` : '')}
     </section>
@@ -1303,7 +1341,9 @@ async function hubView(ctx) {
     const q = clean(e.target.elements.q.value);
     ctx.go('suche' + (q ? '?q=' + enc(q) : ''));
   });
-  root.querySelectorAll('[data-add-space]').forEach((b) => b.addEventListener('click', () => addSpaceSheet(ctx, spaces)));
+  root.querySelectorAll('[data-add-space]').forEach((b) => b.addEventListener('click', () => addSpaceSheet(ctx, spaces, sites, curSite)));
+  const sb = root.querySelector('[data-sites]');
+  if (sb) sb.addEventListener('click', () => sitesSheet(ctx, sites, staff, can(user, 'admin')));
   root.querySelectorAll('[data-tile]').forEach((b) => b.addEventListener('click', () => {
     if (b.dataset.tile === 'tasks') openTasksSheet(ctx, spaces);
     else if (b.dataset.tile === 'noloc') noLocationSheet(ctx);
@@ -1353,11 +1393,66 @@ async function noLocationSheet(ctx) {
   });
 }
 
-async function addSpaceSheet(ctx, spaces) {
+/** Standorte (Adressen) anzeigen; Lagerverantwortliche legen an und ändern, Admins löschen */
+async function sitesSheet(ctx, sites, staff, admin) {
+  const row = (x) => `<li><div class="list-item">
+      <span class="org-head-ic" aria-hidden="true">${icon('pin')}</span>
+      <div class="li-main"><span class="li-title">${esc(x.name)}</span>
+        <span class="li-sub">${esc([x.address, t('site.counts', { s: fmtNum(num(x.space_count)), p: fmtNum(num(x.plan_count)) })].filter(Boolean).join(' · '))}</span></div>
+      <div class="li-end"><a class="btn sm" href="#/organisieren?site=${enc(x.id)}">${esc(t('organize.spaces'))}</a>
+        ${staff ? `<button type="button" class="btn sm" data-edit-site="${esc(x.id)}" aria-label="${esc(t('site.edit') + ': ' + x.name)}">${icon('edit')}</button>` : ''}</div>
+    </div></li>`;
+  const r = await sheet({
+    title: t('site.manage'), wide: true,
+    body: `<p class="small">${esc(t('site.intro'))}</p>
+      ${sites.length ? `<ul class="list">${sites.map(row).join('')}</ul>` : `<p class="muted">${esc(t('site.none.list'))}</p>`}`,
+    actions: staff ? [{ label: t('site.add'), kind: 'primary', icon: 'plus', value: 'add' }] : [],
+    onOpen: (el, close) => {
+      el.querySelectorAll('[data-edit-site]').forEach((b) => b.addEventListener('click', () => close('edit:' + b.dataset.editSite)));
+      el.querySelectorAll('a[href^="#/organisieren"]').forEach((a) => a.addEventListener('click', () => close(null)));
+    },
+  });
+  if (r === 'add') siteEditSheet(ctx, null, admin, sites);
+  else if (typeof r === 'string' && r.startsWith('edit:')) siteEditSheet(ctx, sites.find((x) => x.id === r.slice(5)) || null, admin, sites);
+}
+async function siteEditSheet(ctx, site, admin, sites) {
+  const nextSort = sites.reduce((m, x) => Math.max(m, num(x.sort)), 0) + 10;
+  const body = `<div class="form">
+    <div class="field full"><label for="st-name">${esc(t('site.name'))} <span aria-hidden="true">*</span></label>
+      <input id="st-name" type="text" maxlength="80" autocomplete="off" placeholder="${esc(t('site.namePh'))}" value="${esc(site ? site.name : '')}"></div>
+    <div class="field full"><label for="st-addr">${esc(t('site.address'))}</label>
+      <input id="st-addr" type="text" maxlength="200" autocomplete="street-address" placeholder="${esc(t('site.addressPh'))}" value="${esc(site && site.address ? site.address : '')}"></div>
+    <div class="field"><label for="st-sort">${esc(t('site.sort'))}</label>
+      <input id="st-sort" type="number" step="1" value="${esc(site ? num(site.sort) : nextSort)}"></div>
+    <div class="field full"><label for="st-notes">${esc(t('site.notes'))}</label><textarea id="st-notes" maxlength="2000">${esc(site && site.notes ? site.notes : '')}</textarea></div>
+  </div>`;
+  const actions = [];
+  if (site && admin) actions.push({ label: t('btn.delete'), kind: 'danger', icon: 'trash', value: 'delete' });
+  actions.push({ label: t('btn.save'), kind: 'primary', icon: 'check', onClick: async (el) => {
+    const name = clean(el.querySelector('#st-name').value);
+    if (!name) { el.querySelector('#st-name').focus(); return sheetError(el, t('err.name_required')); }
+    await ctx.api.saveSite({ ...(site ? { id: site.id } : {}), name, address: clean(el.querySelector('#st-addr').value) || null,
+      sort: Math.round(num(el.querySelector('#st-sort').value)), notes: String(el.querySelector('#st-notes').value || '').trim() || null });
+    return 'saved';
+  } });
+  const r = await sheet({ title: t(site ? 'site.edit' : 'site.add'), body, actions });
+  if (r === 'saved') { toast(t('site.saved')); ctx.reload(); return; }
+  if (r === 'delete' && site) {
+    if (!(await confirmSheet(t('site.deleteQ'), t('site.deleteMsg', { name: site.name }), { okLabel: t('btn.delete'), danger: true }))) return;
+    try { await ctx.api.deleteSite(site.id); toast(t('site.deleted')); ctx.go('organisieren'); } catch (err) {
+      toast(err && err.code === 'in_use' ? t('site.inUse') : errorText(err), 'error');
+    }
+  }
+}
+
+async function addSpaceSheet(ctx, spaces, sites = [], curSite = null) {
   const names = new Set(spaces.map((s) => norm(s.name)));
   const usedShort = new Set(spaces.map((s) => s.short_code).filter(Boolean));
   const presets = SPACE_PRESETS.filter((p) => !names.has(norm(p.name)));
   const body = `
+    ${sites.length ? `<div class="field"><label for="sp-site">${esc(t('site.label'))}</label>
+      <select id="sp-site" aria-describedby="sp-site-h">${siteOptionsHtml(sites, curSite && curSite !== 'none' ? curSite : (sites.length === 1 ? sites[0].id : ''))}</select>
+      <span class="hint" id="sp-site-h">${esc(t('site.hint'))}</span></div>` : ''}
     <fieldset class="org-fieldset"><legend>${esc(t('organize.add.presets'))}</legend>
       ${presets.length ? `<p class="hint">${esc(t('organize.add.presetsHint'))}</p>
         <div class="org-presets">${presets.map((p, i) => `<label class="org-preset"><input type="checkbox" name="preset" value="${i}" aria-label="${esc(`${p.name} (${p.short})`)}">
@@ -1393,7 +1488,9 @@ async function addSpaceSheet(ctx, spaces) {
         const rows = [];
         for (const x of todo) {
           try {
-            const row = await ctx.api.saveLocation({ name: x.name, type: x.type, short_code: x.short_code, parent_id: null });
+            const siteSel = el.querySelector('#sp-site');
+            const row = await ctx.api.saveLocation({ name: x.name, type: x.type, short_code: x.short_code, parent_id: null,
+              ...(siteSel ? { site_id: siteSel.value || null } : {}) });
             rows.push(row || { name: x.name });
             if (x.short_code) usedShort.add(x.short_code);
           } catch (err) {
@@ -1581,6 +1678,7 @@ async function spaceView(ctx) {
             <span>${esc(locTypeLabel(loc.type))}</span>
             ${readable ? `<span class="mono org-code" title="${esc(t('organize.readableCode'))}">${esc(readable)}</span>` : ''}
             <span class="mono muted" title="${esc(t('organize.internalCode'))}">${esc(loc.code)}</span>
+            ${loc.site_name ? `<span class="org-site-tag" title="${esc(t('site.label'))}">${icon('pin')}${esc(loc.site_name)}</span>` : ''}
           </div>
           <div class="row small">
             ${sp ? orgStatusPill(sp.org_status) : ''}
@@ -3097,11 +3195,13 @@ async function planView(ctx) {
   const staff = can(user, 'staff');
   ctx.setTitle(t('organize.fp.title'));
   ctx.el.innerHTML = loadingHtml();
-  let plans, spaces, locs;
+  let plans, spaces, locs, sites;
   try {
-    [plans, spaces, locs] = await Promise.all([api.listFloorPlans(), api.listSpaces(),
-      Promise.resolve(api.listLocations()).catch(() => [])]);
+    [plans, spaces, locs, sites] = await Promise.all([api.listFloorPlans(), api.listSpaces(),
+      Promise.resolve(api.listLocations()).catch(() => []),
+      typeof api.listSites === 'function' ? Promise.resolve(api.listSites()).catch(() => []) : []]);
   } catch (err) { showError(ctx, err); return; }
+  sites = sites || [];
   plans = plans || [];
   spaces = spaces || [];
   locs = locs || [];
@@ -3110,8 +3210,20 @@ async function planView(ctx) {
     try { hotspots = (await api.listHotspots({ photoIds: plans.map((p) => p.photo_id) })) || []; } catch (err) { toast(errorText(err), 'error'); }
   }
   const P = { plans, spaces, spaceById: new Map(spaces.map((s) => [s.id, s])), locs, locById: new Map(locs.map((l) => [l.id, l])),
-    hotspots, staff, admin: can(user, 'admin') };
+    hotspots, staff, admin: can(user, 'admin'), sites };
   let cur = plans.find((p) => p.id === qget(ctx, 'plan')) || plans[0] || null;
+  // Pläne je Standort: gibt es Pläne mehrerer Standorte, wählt man zuerst den Standort, dann das Stockwerk
+  const siteById = new Map(sites.map((x) => [x.id, x]));
+  const gOf = (pl) => (pl.site_id && siteById.has(pl.site_id) ? pl.site_id : 'none');
+  const groups = [...sites.map((x) => x.id), 'none'].filter((g) => plans.some((pl) => gOf(pl) === g));
+  const tabPlans = cur ? plans.filter((pl) => gOf(pl) === gOf(cur)) : [];
+  const siteNav = groups.length > 1 ? `<nav class="row org-site-nav" aria-label="${esc(t('site.manage'))}">${groups.map((g) => {
+    const first = plans.find((pl) => gOf(pl) === g);
+    const on = cur && gOf(cur) === g;
+    const x = siteById.get(g);
+    return `<a class="btn sm${on ? ' primary' : ''}" href="${PLAN_HREF(first.id)}"${on ? ' aria-current="page"' : ''}>${icon('pin')}${esc(x ? x.name : t('site.noneGroup'))}</a>`;
+  }).join('')}</nav>` : '';
+  const curSiteObj = cur ? siteById.get(cur.site_id) : null;
 
   ctx.el.innerHTML = `<div class="page org">
     <a class="back-link" href="#/organisieren">${icon('back')}${esc(t('organize.title'))}</a>
@@ -3119,8 +3231,10 @@ async function planView(ctx) {
       <div><h1>${esc(t('organize.fp.title'))}</h1><div class="sub">${esc(t('organize.fp.sub'))}</div></div>
       ${staff ? `<div class="actions"><button type="button" class="btn${plans.length ? '' : ' primary'}" data-addplan>${icon('plus')}${esc(t('organize.fp.add'))}</button></div>` : ''}
     </div>
+    ${siteNav}
+    ${curSiteObj && groups.length <= 1 ? `<p class="small muted org-site-line">${icon('pin')}${esc(curSiteObj.name)}${curSiteObj.address && curSiteObj.address !== curSiteObj.name ? ' – ' + esc(curSiteObj.address) : ''}</p>` : ''}
     ${plans.length ? `<div class="tabs org-tabs" role="tablist" aria-label="${esc(t('organize.fp.tabs'))}">
-      ${plans.map((p) => `<button type="button" class="tab" role="tab" id="fp-tab-${esc(p.id)}" data-plan="${esc(p.id)}" aria-controls="fp-panel"
+      ${tabPlans.map((p) => `<button type="button" class="tab" role="tab" id="fp-tab-${esc(p.id)}" data-plan="${esc(p.id)}" aria-controls="fp-panel"
         aria-selected="${p.id === cur.id}" tabindex="${p.id === cur.id ? 0 : -1}">${esc(p.name)}</button>`).join('')}
     </div>
     <div class="org-panel" id="fp-panel" role="tabpanel" aria-labelledby="fp-tab-${esc(cur.id)}" data-panel></div>`
@@ -3154,6 +3268,7 @@ async function planView(ctx) {
 }
 
 function renderPlanPanel(ctx, P, panel, plan) {
+  P.curPlan = plan;
   const editing = P.staff && planUi.editing === plan.id;
   const areas = P.hotspots.filter((h) => h.photo_id === plan.photo_id).sort((a, b) => areaSize(b) - areaSize(a));
   const cmp = collator();
@@ -3243,7 +3358,7 @@ function renderPlanPanel(ctx, P, panel, plan) {
     if (nb) nb.focus();
   });
   const rb = panel.querySelector('[data-fprename]');
-  if (rb) rb.addEventListener('click', () => editPlanSheet(ctx, plan));
+  if (rb) rb.addEventListener('click', () => editPlanSheet(ctx, plan, P));
   const db = panel.querySelector('[data-fpdelete]');
   if (db) db.addEventListener('click', async () => {
     if (!(await confirmSheet(t('organize.fp.deleteQ'), t('organize.fp.deleteMsg', { name: plan.name }), { okLabel: t('btn.delete'), danger: true }))) return;
@@ -3265,6 +3380,8 @@ function newRoomFieldsHtml(P, idp, name) {
         value="${esc(suggestRoomCode(name || '', used))}" aria-describedby="${idp}-short-h"></div>
     <div class="field"><label for="${idp}-type">${esc(t('organize.f.type'))}</label><select id="${idp}-type">${typeOptions('raum')}</select></div>
     <div class="hint field full" id="${idp}-short-h">${esc(t('organize.f.shortHint'))}</div>
+    ${P.sites && P.sites.length ? `<div class="field full"><label for="${idp}-site">${esc(t('site.label'))}</label>
+      <select id="${idp}-site">${siteOptionsHtml(P.sites, (P.curPlan && P.curPlan.site_id) || '')}</select></div>` : ''}
   </div>`;
 }
 /** Kurzcode-Vorschlag folgt dem Namen, bis jemand selbst einen Kurzcode eingibt */
@@ -3279,7 +3396,9 @@ function bindRoomCodeSuggest(root, P, idp) {
 async function createRoom(ctx, root, idp) {
   const r = readNewLoc(root, idp);
   if (r.error) { const f = root.querySelector(r.field); if (f) f.focus(); throw Object.assign(new Error(r.error), { msg: r.error }); }
-  return ctx.api.saveLocation({ name: r.name, type: r.type, short_code: r.short_code, parent_id: null });
+  const siteSel = root.querySelector(`#${idp}-site`);
+  return ctx.api.saveLocation({ name: r.name, type: r.type, short_code: r.short_code, parent_id: null,
+    ...(siteSel ? { site_id: siteSel.value || null } : {}) });
 }
 function spaceOptions(P, selected) {
   return P.spaces.map((s) => `<option value="${esc(s.id)}"${s.id === selected ? ' selected' : ''}>${esc(s.name)}${s.short_code ? ' · ' + esc(s.short_code) : ''}</option>`).join('');
@@ -3422,6 +3541,8 @@ async function addPlanSheet(ctx, P) {
       <input id="fp-name" type="text" maxlength="60" autocomplete="off" placeholder="${esc(t('organize.fp.namePh'))}"></div>
     <div class="field"><label for="fp-sort">${esc(t('organize.fp.sort'))}</label>
       <input id="fp-sort" type="number" step="1" value="${nextSort}" aria-describedby="fp-sort-h"><span class="hint" id="fp-sort-h">${esc(t('organize.fp.sortHint'))}</span></div>
+    ${P.sites.length ? `<div class="field full"><label for="fp-site">${esc(t('site.label'))}</label>
+      <select id="fp-site">${siteOptionsHtml(P.sites, (P.curPlan && P.curPlan.site_id) || (P.sites.length === 1 ? P.sites[0].id : ''))}</select></div>` : ''}
   </div>`;
   const row = await sheet({
     title: t('organize.fp.add'), body,
@@ -3437,7 +3558,9 @@ async function addPlanSheet(ctx, P) {
           photoId = r && r.photo && r.photo.id;
         }
         if (!photoId) return sheetError(el, t('err.invalid_file'));
-        return ctx.api.saveFloorPlan({ name, sort: Math.round(num(el.querySelector('#fp-sort').value)), photo_id: photoId });
+        const siteSel = el.querySelector('#fp-site');
+        return ctx.api.saveFloorPlan({ name, sort: Math.round(num(el.querySelector('#fp-sort').value)), photo_id: photoId,
+          ...(siteSel ? { site_id: siteSel.value || null } : {}) });
       } },
     ],
     onOpen: (el) => {
@@ -3449,12 +3572,14 @@ async function addPlanSheet(ctx, P) {
   if (row && row.id) { toast(t('organize.fp.added', { name: row.name })); ctx.go('organisieren/plan?plan=' + enc(row.id)); }
 }
 
-async function editPlanSheet(ctx, plan) {
+async function editPlanSheet(ctx, plan, P = { sites: [] }) {
   const body = `<div class="form">
     <div class="field"><label for="fe-name">${esc(t('organize.fp.name'))}</label>
       <input id="fe-name" type="text" maxlength="60" autocomplete="off" value="${esc(plan.name)}"></div>
     <div class="field"><label for="fe-sort">${esc(t('organize.fp.sort'))}</label>
       <input id="fe-sort" type="number" step="1" value="${esc(num(plan.sort))}" aria-describedby="fe-sort-h"><span class="hint" id="fe-sort-h">${esc(t('organize.fp.sortHint'))}</span></div>
+    ${P.sites.length ? `<div class="field full"><label for="fe-site">${esc(t('site.label'))}</label>
+      <select id="fe-site">${siteOptionsHtml(P.sites, plan.site_id || '')}</select></div>` : ''}
     <div class="field full"><label for="fe-notes">${esc(t('organize.fp.notes'))}</label><textarea id="fe-notes" maxlength="2000">${esc(plan.notes || '')}</textarea></div>
   </div>`;
   const ok = await sheet({
@@ -3464,8 +3589,9 @@ async function editPlanSheet(ctx, plan) {
       { label: t('btn.save'), kind: 'primary', icon: 'check', onClick: async (el) => {
         const name = clean(el.querySelector('#fe-name').value);
         if (!name) return sheetError(el, t('err.name_required'));
+        const siteSel = el.querySelector('#fe-site');
         await ctx.api.saveFloorPlan({ id: plan.id, name, sort: Math.round(num(el.querySelector('#fe-sort').value)),
-          notes: String(el.querySelector('#fe-notes').value || '').trim() || null });
+          notes: String(el.querySelector('#fe-notes').value || '').trim() || null, ...(siteSel ? { site_id: siteSel.value || null } : {}) });
         return true;
       } },
     ],

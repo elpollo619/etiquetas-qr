@@ -377,6 +377,39 @@ test('gebäudeplan: Planbild zählt nicht als Foto, Bereiche nur beschriftet ode
   await fails(asAnon(`select * from public.floor_plan_overview`), /permission denied/);
 });
 
+test('standorte: Rechte, nur Räume haben einen Standort, Code ohne Standort, Löschen nur ungenutzt', async () => {
+  await fails(as(U.ma, `insert into public.sites (name) values ('Aussenlager')`), /row-level security/);
+  const site = await one(U.lv, `insert into public.sites (name, address, sort) values ('Musterweg 8', 'Musterweg 8, 3000 Bern', 20) returning *`);
+  assert.equal(site.created_by, U.lv);
+  await fails(as(U.lv, `insert into public.sites (name) values (' musterweg 8 ')`), /sites_name_uniq|duplicate/);
+  // Raum am Standort; ein Unterort hat keinen eigenen Standort (übernimmt ihn nur in der Anzeige)
+  const room = await one(U.lv, `insert into public.locations (name, type, short_code, site_id) values ('Lager H', 'raum', 'H1', $1) returning *`, [site.id]);
+  assert.equal(room.site_id, site.id);
+  const shelf = await one(U.lv, `insert into public.locations (name, type, short_code, parent_id, site_id) values ('Regal', 'regal', 'RG01', $1, $2) returning *`, [room.id, site.id]);
+  assert.equal(shelf.site_id, null, 'Unterort ohne eigenen Standort');
+  const ov = await one(U.ma, `select space_site_id, site_name, code_path from public.location_overview where id = $1`, [shelf.id]);
+  assert.deepEqual([ov.space_site_id, ov.site_name, ov.code_path], [site.id, 'Musterweg 8', 'H1-RG01'], 'Standort steht nicht im Code');
+  assert.equal((await one(U.ma, `select site_name from public.space_overview where id = $1`, [room.id])).site_name, 'Musterweg 8');
+  assert.equal((await as(U.ma, `update public.locations set site_id = null where id = $1 returning id`, [room.id])).rows.length, 0, 'Mitarbeiter ändert nichts');
+  // Gebäudeplan am Standort
+  const pic = await one(U.lv, `insert into public.photos (path, sha256, file_name, kind) values ($1, $2, 'h-eg.png', 'plan') returning *`, [`photos/${sha(91)}.png`, sha(91)]);
+  const fp = await one(U.lv, `insert into public.floor_plans (name, photo_id, site_id) values ('EG', $1, $2) returning *`, [pic.id, site.id]);
+  assert.equal((await one(U.ma, `select site_name from public.floor_plan_overview where id = $1`, [fp.id])).site_name, 'Musterweg 8');
+  const so = await one(U.ma, `select space_count, plan_count from public.site_overview where id = $1`, [site.id]);
+  assert.deepEqual([Number(so.space_count), Number(so.plan_count)], [1, 1]);
+  // Löschen: nur Admin, und nur wenn kein Raum/Plan mehr daran hängt
+  assert.equal((await as(U.lv, `delete from public.sites where id = $1 returning id`, [site.id])).rows.length, 0, 'nur Admin löscht');
+  await fails(as(U.admin, `delete from public.sites where id = $1`, [site.id]), /foreign key|violates/);
+  // Raum wird untergeordnet → Standort fällt weg
+  const moved = await one(U.lv, `update public.locations set parent_id = $1 where id = $2 returning site_id`, [S.space.id, room.id]);
+  assert.equal(moved.site_id, null);
+  await one(U.lv, `update public.floor_plans set site_id = null where id = $1 returning id`, [fp.id]);
+  assert.equal((await as(U.admin, `delete from public.sites where id = $1 returning id`, [site.id])).rows.length, 1);
+  const log = await one(U.admin, `select count(*)::int as n from public.audit_log where entity = 'sites' and entity_id = $1`, [site.id]);
+  assert.ok(log.n >= 2, 'Standort im Protokoll');
+  await fails(asAnon(`select * from public.site_overview`), /permission denied/);
+});
+
 test('fotos: mit bestätigten Objekten nicht löschbar; Mitarbeiter löscht nie', async () => {
   await fails(as(U.lv, `delete from public.photos where id = $1`, [S.p1.id]), /LGR:in_use/);
   const r = await as(U.ma, `delete from public.photos where id = $1 returning id`, [S.p3.id]);

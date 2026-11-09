@@ -1,14 +1,15 @@
 // «Lager organisieren» im Demo-Modus (Vertrag: docs/ARCHITECTURE.md, Abschnitt «Erweiterung «Lager organisieren»»).
 // Regeln, Rechte, Fehlercodes und Protokoll wie supabase/schema.sql:
 //   Tabellen categories, photos (kind foto|plan), detections, photo_hotspots, org_tasks, set_components,
-//   floor_plans (Gebäudeplan, Ansicht floor_plan_overview) + neue Spalten,
-//   Trigger check_category_parent, photo_insert_defaults, photo_delete_guard, org_task_status,
+//   floor_plans (Gebäudeplan, Ansicht floor_plan_overview), sites (Standorte, Ansicht site_overview) + neue Spalten,
+//   Trigger check_category_parent, photo_insert_defaults, photo_delete_guard, org_task_status, location_site_top_only,
 //   Funktionen import_photo_analysis, set_photo_status, add_detection, review_detection, set_location_organized,
 //   category_by_path, location_root, Ansichten category_paths, photo_overview, detection_overview,
 //   org_task_overview, space_overview, org_stats.
 // Eingaben/Rückgaben wie js/api-supabase.js. Geladen von js/api-demo.js: installOrgDemo(api, interna).
 
-export const ORG_TABLES = Object.freeze(['categories', 'photos', 'detections', 'photo_hotspots', 'org_tasks', 'set_components', 'floor_plans']);
+export const ORG_TABLES = Object.freeze(['categories', 'photos', 'detections', 'photo_hotspots', 'org_tasks', 'set_components', 'floor_plans',
+  'sites']);
 
 // Startkategorien – exakt der DO-Block «Startkategorien» in supabase/schema.sql (sort = Position × 10)
 export const START_CATEGORIES = Object.freeze([
@@ -35,7 +36,8 @@ const CATEGORY_COLS = ['id', 'parent_id', 'name', 'sort', 'archived', 'created_b
 const PHOTO_COLS = ['id', 'location_id', 'path', 'sha256', 'file_name', 'folder', 'mime', 'size_bytes', 'width', 'height', 'status',
   'analysis_error', 'analysis_source', 'analyzed_at', 'scene', 'area', 'observations', 'recommendations', 'uploaded_by', 'created_at',
   'kind'];
-const FLOOR_PLAN_COLS = ['id', 'name', 'sort', 'photo_id', 'notes', 'created_by', 'created_at', 'updated_at'];
+const FLOOR_PLAN_COLS = ['id', 'name', 'sort', 'photo_id', 'notes', 'created_by', 'created_at', 'updated_at', 'site_id'];
+const SITE_COLS = ['id', 'name', 'address', 'sort', 'notes', 'created_by', 'created_at', 'updated_at'];
 const PHOTO_KINDS = ['foto', 'plan'];   // photos_kind_chk; Planbilder zählen nicht als Fotos
 const isFoto = (p) => (p.kind ?? 'foto') === 'foto';
 const DETECTION_COLS = ['id', 'photo_id', 'obj_key', 'source', 'name', 'kind', 'category_id', 'category_text', 'brand', 'model',
@@ -221,17 +223,27 @@ export function seedCategories(db, at, makeId = newUuid) {
   });
 }
 
-/** Demo-Datenstand Version 1 → 2: neue Tabellen und Spalten ergänzen (nur additiv), Kategorien anlegen falls keine. */
-export function upgradeDb(db, at) {
+/**
+ * Fehlende Tabellen und Spalten ergänzen (nur additiv, ohne Startdaten). Läuft bei jedem Laden, auch für den aktuellen
+ * Datenstand: Standorte (sites, locations.site_id, floor_plans.site_id) kamen ohne neue Version dazu.
+ */
+export function completeDb(db) {
   for (const t of ORG_TABLES) if (!Array.isArray(db[t])) db[t] = [];
   const fill = (rows, defs) => {
     for (const r of Array.isArray(rows) ? rows : []) for (const [k, v] of Object.entries(defs)) if (r[k] === undefined) r[k] = v;
   };
-  fill(db.locations, { short_code: null, responsible_id: null, organized_at: null, organized_by: null, cover_photo_id: null });
+  fill(db.locations, { short_code: null, responsible_id: null, organized_at: null, organized_by: null, cover_photo_id: null, site_id: null });
   fill(db.articles, { category_id: null, product_url: null });
   fill(db.machines, { category_id: null, responsible_id: null, is_set: false, product_url: null });
   fill(db.inventories, { location_id: null });
   fill(db.photos, { kind: 'foto' });   // Gebäudeplan: bestehende Bilder sind Fotos
+  fill(db.floor_plans, { site_id: null });
+  return db;
+}
+
+/** Demo-Datenstand Version 1 → 2: neue Tabellen und Spalten ergänzen (nur additiv), Kategorien anlegen falls keine. */
+export function upgradeDb(db, at) {
+  completeDb(db);
   if (!db.categories.length) seedCategories(db, at);
   return db;
 }
@@ -279,11 +291,13 @@ export function orgViewIndex(db) {
   const comp = new Map();
   for (const c of db.set_components || []) comp.set(c.set_id, (comp.get(c.set_id) || 0) + 1);
   const detPath = (kind) => (id) => { const d = id ? best[kind].get(id) : null; return d ? photoPath.get(d.photo_id) ?? null : null; };
+  const siteName = new Map((db.sites || []).map((s) => [s.id, s.name]));
   return {
     categoryPath: (id) => (id && cats.has(id) ? cats.get(id) : null),
     photoPath: (id) => (id && photoPath.has(id) ? photoPath.get(id) : null),
     detectionPhoto: { machine: detPath('machine'), article: detPath('article') },
     componentCount: (id) => comp.get(id) || 0,
+    siteName: (id) => (id && siteName.has(id) ? siteName.get(id) : null),   // location_overview.site_name
   };
 }
 
@@ -334,6 +348,7 @@ export function installOrgDemo(api, x) {
   // ---- gemeinsame Abfragen ----
   const locById = (id) => (id ? D().locations.find((l) => l.id === id) || null : null);
   const photoById = (id) => (id ? D().photos.find((p) => p.id === id) || null : null);
+  const siteById = (id) => (id ? D().sites.find((s) => s.id === id) || null : null);
   /** location_root(): oberster Lagerort; null wenn unbekannt oder Zyklus */
   function locationRoot(id) {
     if (!id) return null;
@@ -1000,10 +1015,12 @@ export function installOrgDemo(api, x) {
   // ---- Gebäudepläne (floor_plans / floor_plan_overview) ----
   function vFloorPlan(f) {
     const p = photoById(f.photo_id) || {};
+    const st = siteById(f.site_id);
     const hs = D().photo_hotspots.filter((h) => h.photo_id === f.photo_id);
     return {
       ...pick(f, FLOOR_PLAN_COLS), photo_path: p.path ?? null, photo_width: p.width ?? null, photo_height: p.height ?? null,
       area_count: hs.length, linked_count: hs.filter((h) => h.location_id).length,
+      site_name: st ? st.name : null, site_sort: st ? st.sort : null,
     };
   }
   function coreSaveFloorPlan(obj) {
@@ -1016,16 +1033,21 @@ export function installOrgDemo(api, x) {
     }
     if (hasKey(obj, 'sort')) patch.sort = Math.round(Number(obj.sort) || 0);
     if (hasKey(obj, 'notes')) patch.notes = trimOrNull(obj.notes);
+    if (hasKey(obj, 'site_id')) {   // Standort: '' oder null = ohne
+      patch.site_id = obj.site_id || null;
+      if (patch.site_id && !isUuid(patch.site_id)) throw E('invalid_value');
+    }
     if (!obj.id) {
       if (!patch.name) throw E('name_required');
       if (!isUuid(obj.photo_id)) throw E('file_required');
       if (!x.isStaff()) throw E('not_authorized');
       if (!photoById(obj.photo_id)) throw E('not_found');
       if (db.floor_plans.some((f) => f.photo_id === obj.photo_id)) throw E('duplicate', 'floor_plans_photo_id_key');
+      if (patch.site_id && !siteById(patch.site_id)) throw E('not_found');   // floor_plans_site_id_fkey
       const t = now();
       const row = {
         id: uuid(), name: patch.name, sort: patch.sort ?? 0, photo_id: obj.photo_id, notes: patch.notes ?? null,
-        created_by: x.uid(), created_at: t, updated_at: t,
+        created_by: x.uid(), created_at: t, updated_at: t, site_id: patch.site_id ?? null,
       };
       db.floor_plans.push(row);
       x.audit('insert', 'floor_plans', row.id, omit(row, ['created_at', 'updated_at']));
@@ -1036,9 +1058,64 @@ export function installOrgDemo(api, x) {
     if (!row || !x.canRead()) throw E('not_found');
     if (!Object.keys(patch).length) return row.id;
     if (!x.isStaff()) throw E('not_authorized');
+    if (patch.site_id && !siteById(patch.site_id)) throw E('not_found');   // floor_plans_site_id_fkey
     const diff = x.applyPatch(row, patch);   // photo_id ist nach dem Anlegen fest
     row.updated_at = now();
     if (Object.keys(diff).length) x.audit('update', 'floor_plans', row.id, diff);
+    return row.id;
+  }
+
+  // ---- Standorte (sites / site_overview; gruppieren Räume und Pläne, stehen nicht im Code) ----
+  /** site_overview: sites.* + space_count (nicht archivierte Räume) + plan_count (Gebäudepläne) */
+  function siteCounts() {
+    const db = D();
+    const spaces = new Map();
+    const plans = new Map();
+    for (const l of db.locations) if (l.site_id && !l.parent_id && !l.archived) spaces.set(l.site_id, (spaces.get(l.site_id) || 0) + 1);
+    for (const f of db.floor_plans) if (f.site_id) plans.set(f.site_id, (plans.get(f.site_id) || 0) + 1);
+    return { spaces, plans };
+  }
+  const vSite = (s, k = siteCounts()) => ({ ...pick(s, SITE_COLS), space_count: k.spaces.get(s.id) || 0, plan_count: k.plans.get(s.id) || 0 });
+  /** sites_name_uniq: lower(trim(name)) eindeutig */
+  function assertSiteUnique(id, name) {
+    const n = sqlTrim(name).toLowerCase();
+    if (D().sites.some((s) => s.id !== id && sqlTrim(s.name).toLowerCase() === n)) throw E('duplicate', 'sites_name_uniq');
+  }
+  function coreSaveSite(obj) {
+    if (!obj || typeof obj !== 'object') throw E('invalid_value');
+    const db = D();
+    const patch = {};
+    // Längen wie api-supabase.js (vor dem Senden geprüft → invalid_value)
+    if (hasKey(obj, 'name')) {
+      patch.name = String(obj.name ?? '').trim();
+      if (!patch.name) throw E('name_required');
+      if (patch.name.length > 80) throw E('invalid_value');
+    }
+    if (hasKey(obj, 'address')) { patch.address = trimOrNull(obj.address); if (patch.address && patch.address.length > 200) throw E('invalid_value'); }
+    if (hasKey(obj, 'sort')) patch.sort = Math.round(Number(obj.sort) || 0);
+    if (hasKey(obj, 'notes')) { patch.notes = trimOrNull(obj.notes); if (patch.notes && patch.notes.length > 2000) throw E('invalid_value'); }
+    if (!obj.id) {
+      if (!patch.name) throw E('name_required');
+      if (!x.isStaff()) throw E('not_authorized');   // sites_insert: Lagerverantwortliche/Admins
+      assertSiteUnique(null, patch.name);
+      const t = now();
+      const row = {
+        id: uuid(), name: patch.name, address: patch.address ?? null, sort: patch.sort ?? 0, notes: patch.notes ?? null,
+        created_by: x.uid(), created_at: t, updated_at: t,
+      };
+      db.sites.push(row);
+      x.audit('insert', 'sites', row.id, omit(row, ['created_at', 'updated_at']));
+      return row.id;
+    }
+    if (!isUuid(obj.id)) throw E('not_found');
+    const row = db.sites.find((s) => s.id === obj.id) || null;
+    if (!row || !x.canRead()) throw E('not_found');
+    if (!Object.keys(patch).length) return row.id;
+    if (!x.isStaff()) throw E('not_authorized');   // sites_update
+    if (has(patch, 'name')) assertSiteUnique(row.id, patch.name);
+    const diff = x.applyPatch(row, patch);
+    row.updated_at = now();
+    if (Object.keys(diff).length) x.audit('update', 'sites', row.id, diff);
     return row.id;
   }
 
@@ -1331,6 +1408,36 @@ export function installOrgDemo(api, x) {
       });
     },
     async saveHotspot(obj) { return x.mutate(() => vHotspot(coreSaveHotspot(obj))); },
+
+    // ---- Standorte (Adressen; gruppieren Räume und Pläne, stehen nicht im Code) ----
+    async listSites() {
+      return x.read(() => {
+        if (!x.canRead()) return [];
+        const k = siteCounts();
+        return D().sites
+          .slice()
+          .sort((a, b) => ((a.sort || 0) - (b.sort || 0)) || cmp(a.name, b.name) || cmp(a.id, b.id))
+          .map((s) => vSite(s, k));
+      });
+    },
+    async saveSite(obj) {
+      return x.mutate(() => {
+        const id = coreSaveSite(obj);
+        return vSite(D().sites.find((s) => s.id === id));
+      });
+    },
+    async deleteSite(id) {
+      return x.mutate(() => {
+        const db = D();
+        const s = isUuid(id) ? db.sites.find((r) => r.id === id) : null;
+        if (!s || !x.canRead()) throw E('not_found');
+        if (!x.isAdmin()) throw E('not_authorized');   // sites_delete: nur Admins
+        // Fremdschlüssel «on delete restrict»: Räume (auch archivierte) und Gebäudepläne am Standort
+        if (db.locations.some((l) => l.site_id === s.id) || db.floor_plans.some((f) => f.site_id === s.id)) throw E('in_use');
+        db.sites = db.sites.filter((r) => r.id !== s.id);
+        x.audit('delete', 'sites', s.id, s);
+      });
+    },
 
     // ---- Gebäudepläne (Grundriss je Stockwerk; Bild = Foto mit kind 'plan', Räume = Bereiche) ----
     async listFloorPlans() {

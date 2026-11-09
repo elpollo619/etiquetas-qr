@@ -265,7 +265,26 @@ api.listPhotos({ …, kind })                   Standard kind 'foto'
 api.listHotspots({ photoId | photoIds | locationId }) → mit locationId: alle Bereiche (auch auf Plänen), die auf diesen Lagerort zeigen
 api.saveHotspot({ …, location_id: null, label }) erlaubt (nur beschriftet)
 ```
-Route: `organisieren/plan` (Stockwerk-Reiter, ?plan=<id>).
+Route: `organisieren/plan` (Stockwerk-Reiter, ?plan=<id>). Möbel/Unterorte dürfen ebenfalls Bereiche auf dem Plan haben
+(kleinere Bereiche liegen über dem Raum, Beschriftung = Kurzcode); Zoom − / + / Ganzer Plan.
+
+### Adressen (Tabelle `sites`, im Code «Standorte»)
+- Mehrere Gebäude/Lager an verschiedenen Adressen. `sites`: id, name (eindeutig, ohne Gross/Klein), address, sort, notes, created_by,
+  created_at, updated_at; protokolliert. Lesen: alle aktiven; anlegen/ändern: Lagerverantwortliche; löschen: Admin und nur ungenutzt.
+- `locations.site_id` nur für Räume (oberste Lagerorte; Prüfregel + Trigger: wird ein Lagerort untergeordnet, fällt `site_id` weg).
+  `floor_plans.site_id` gruppiert die Pläne.
+- **Die Adresse steht nicht im lesbaren Code** (G1-RG01 bleibt kurz) – Kurzcodes der Räume sind deshalb über alle Adressen eindeutig.
+- Ansichten: `location_overview` / `space_overview` + `space_site_id` (Adresse des Raums, auch für Unterorte) und `site_name`;
+  `floor_plan_overview` + `site_name`, `site_sort`; `site_overview` = sites + `space_count`, `plan_count`.
+```
+api.listSites()                                → site_overview (sort, name)
+api.saveSite({ id?, name, address, sort, notes }) → Zeile
+api.deleteSite(id)                             (Admin; 'in_use', wenn noch Räume/Pläne daran hängen)
+api.saveLocation({ …, site_id })               nur bei Räumen wirksam
+api.saveFloorPlan({ …, site_id })
+```
+UI: «Lager organisieren» filtert/gruppiert die Räume nach Adresse (?site=<id>|none); Gebäudeplan wählt zuerst die Adresse,
+dann das Stockwerk; Lagerort-Formular und «Raum hinzufügen» haben das Feld «Adresse».
 
 ## Ansichten (js/views/*.js)
 

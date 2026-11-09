@@ -32,7 +32,7 @@ export const API_METHODS = Object.freeze([
   'listPhotos', 'importPhoto', 'setPhotoStatus', 'movePhoto', 'deletePhoto', 'importAnalysis',
   'listDetections', 'reviewDetection', 'addDetection', 'listTasks', 'saveTask',
   'listHotspots', 'saveHotspot', 'deleteHotspot', 'listComponents', 'saveComponent', 'deleteComponent',
-  'listFloorPlans', 'saveFloorPlan', 'deleteFloorPlan',
+  'listFloorPlans', 'saveFloorPlan', 'deleteFloorPlan', 'listSites', 'saveSite', 'deleteSite',
 ]);
 
 export const SUPABASE_CONFIGURED = Boolean(String(SUPABASE_URL || '').trim() && String(SUPABASE_ANON_KEY || '').trim());

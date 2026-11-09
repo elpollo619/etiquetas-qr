@@ -827,6 +827,151 @@ describe('Gebäudeplan', () => {
   });
 });
 
+// =============================================================================================
+describe('Standorte (wie tests/org.test.mjs «standorte»)', () => {
+  test('anlegen nur Lagerverantwortliche/Admins, Name eindeutig (Gross/Klein egal), Längen, Reihenfolge sort/Name', async () => {
+    const api = await demo();
+    await as(api, 'daniel');
+    assert.deepEqual(await api.listSites(), []);
+    await rejects(api.saveSite({ name: 'Aussenlager' }), 'not_authorized');
+    await as(api, 'luca');
+    await rejects(api.saveSite(null), 'invalid_value');
+    await rejects(api.saveSite({}), 'name_required');
+    await rejects(api.saveSite({ name: '  ' }), 'name_required');
+    await rejects(api.saveSite({ name: 'x'.repeat(81) }), 'invalid_value');
+    await rejects(api.saveSite({ name: 'A', address: 'x'.repeat(201) }), 'invalid_value');
+    await rejects(api.saveSite({ name: 'A', notes: 'x'.repeat(2001) }), 'invalid_value');
+    const hw = await api.saveSite({ name: ' Musterweg 8 ', address: ' Musterweg 8, 3000 Bern ', sort: 20 });
+    assert.deepEqual([hw.name, hw.address, hw.sort, hw.notes, hw.created_by, hw.space_count, hw.plan_count],
+      ['Musterweg 8', 'Musterweg 8, 3000 Bern', 20, null, U.luca, 0, 0]);
+    await rejects(api.saveSite({ name: ' musterweg 8 ' }), 'duplicate', 'sites_name_uniq');
+    const ke = await api.saveSite({ name: 'Aussenlager', sort: 20 });
+    const bu = await api.saveSite({ name: 'Büro Bern', sort: 10 });
+    assert.deepEqual((await api.listSites()).map((s) => s.name), ['Büro Bern', 'Aussenlager', 'Musterweg 8'], 'nach sort, dann Name');
+    await rejects(api.saveSite({ id: ke.id, name: 'MUSTERWEG 8' }), 'duplicate', 'sites_name_uniq');
+    assert.equal((await api.saveSite({ id: bu.id, name: 'BÜRO BERN' })).name, 'BÜRO BERN', 'eigener Name zählt nicht als doppelt');
+    const ke2 = await api.saveSite({ id: ke.id, name: 'Aussenlager Halle', sort: 5, notes: ' Halle 2 ' });
+    assert.deepEqual([ke2.name, ke2.sort, ke2.notes, ke2.created_by], ['Aussenlager Halle', 5, 'Halle 2', U.luca]);
+    assert.deepEqual((await api.listSites()).map((s) => s.id), [ke.id, bu.id, hw.id]);
+    // Mitarbeiter liest, ändert nichts; nicht freigegebene sehen nichts
+    await as(api, 'daniel');
+    assert.equal((await api.listSites()).length, 3);
+    await rejects(api.saveSite({ id: ke.id, name: 'X' }), 'not_authorized');
+    await as(api, 'ana');
+    assert.deepEqual(await api.listSites(), []);
+    await rejects(api.saveSite({ id: ke.id, name: 'X' }), 'not_found');
+    await as(api, 'luca');
+    await rejects(api.saveSite({ id: 'kein-uuid', name: 'X' }), 'not_found');
+    await rejects(api.saveSite({ id: randomUUID(), name: 'X' }), 'not_found');
+    assert.equal((await api.listSites()).find((s) => s.id === ke.id).name, 'Aussenlager Halle', 'unverändert');
+    const au = (await api.listAudit({ entity: 'sites', entityId: ke.id })).map((r) => r.action);
+    assert.deepEqual(au, ['update', 'insert']);
+    await api.signOut();
+    await rejects(api.listSites(), 'not_authorized');
+  });
+
+  test('Raum am Standort: Unterorte zeigen ihn nur an, Code ohne Standort, Gebäudeplan, Zählung, Löschen, Umhängen', async () => {
+    const api = await demo();
+    await as(api, 'luca');
+    const site = await api.saveSite({ name: 'Musterweg 8', sort: 20 });
+    await rejects(api.saveLocation({ name: 'Lager H', type: 'raum', site_id: randomUUID() }), 'not_found');
+    await rejects(api.saveLocation({ name: 'Lager H', type: 'raum', site_id: 'kein-uuid' }), 'not_found');
+    const room = await api.saveLocation({ name: 'Lager H', type: 'raum', short_code: 'H1', site_id: site.id });
+    assert.deepEqual([room.site_id, room.space_site_id, room.site_name, room.code_path], [site.id, site.id, 'Musterweg 8', 'H1']);
+    // Unterort: kein eigener Standort (Trigger setzt ihn vor der Fremdschlüsselprüfung auf null), zeigt den des Raums
+    const shelf = await api.saveLocation({ name: 'Regal', type: 'regal', short_code: 'RG01', parent_id: room.id, site_id: site.id });
+    assert.deepEqual([shelf.site_id, shelf.space_site_id, shelf.site_name, shelf.code_path],
+      [null, site.id, 'Musterweg 8', 'H1-RG01'], 'Standort steht nicht im Code');
+    const box = await api.saveLocation({ name: 'Box', type: 'box', parent_id: shelf.id, site_id: randomUUID() });
+    assert.deepEqual([box.site_id, box.space_site_id, box.site_name], [null, site.id, 'Musterweg 8']);
+    assert.equal((await api.saveLocation({ id: shelf.id, site_id: site.id })).site_id, null);
+    assert.equal((await api.listAudit({ entity: 'locations', entityId: shelf.id })).filter((r) => r.action === 'update').length, 0,
+      'nichts geändert → kein Protokoll');
+    // alle Lesewege: listLocations, getLocation, getLocationByCode, listSpaces
+    const locs = await api.listLocations();
+    assert.equal(locs.find((l) => l.id === box.id).site_name, 'Musterweg 8');
+    const hl = locs.find((l) => l.code === 'L-0001');
+    assert.deepEqual([hl.site_id, hl.space_site_id, hl.site_name], [null, null, null], 'Raum ohne Standort');
+    assert.equal((await api.getLocation(shelf.id)).space_site_id, site.id);
+    assert.equal((await api.getLocationByCode(box.code)).site_name, 'Musterweg 8');
+    const sp = (await api.listSpaces()).find((s) => s.id === room.id);
+    assert.deepEqual([sp.site_id, sp.space_site_id, sp.site_name], [site.id, site.id, 'Musterweg 8']);
+    await as(api, 'daniel');
+    await rejects(api.saveLocation({ id: room.id, site_id: null }), 'not_authorized');
+    await as(api, 'luca');
+    // Gebäudeplan am Standort
+    const { photo: pic } = await api.importPhoto(png('h-eg.png'), { kind: 'plan', sha256: sha(91) });
+    await rejects(api.saveFloorPlan({ name: 'EG', photo_id: pic.id, site_id: 'kein-uuid' }), 'invalid_value');
+    await rejects(api.saveFloorPlan({ name: 'EG', photo_id: pic.id, site_id: randomUUID() }), 'not_found');
+    const fp = await api.saveFloorPlan({ name: 'EG', photo_id: pic.id, site_id: site.id });
+    assert.deepEqual([fp.site_id, fp.site_name, fp.site_sort], [site.id, 'Musterweg 8', 20]);
+    const { photo: pic2 } = await api.importPhoto(png('h-og.png', 2), { kind: 'plan', sha256: sha(92) });
+    const og = await api.saveFloorPlan({ name: 'OG', sort: 10, photo_id: pic2.id });
+    assert.deepEqual([og.site_id, og.site_name, og.site_sort], [null, null, null]);
+    await rejects(api.saveFloorPlan({ id: og.id, site_id: randomUUID() }), 'not_found');
+    assert.equal((await api.saveFloorPlan({ id: og.id, site_id: site.id })).site_name, 'Musterweg 8');
+    assert.deepEqual((await api.listFloorPlans()).map((f) => [f.name, f.site_id, f.site_name, f.site_sort]),
+      [['EG', site.id, 'Musterweg 8', 20], ['OG', site.id, 'Musterweg 8', 20]]);
+    assert.equal((await api.saveFloorPlan({ id: og.id, site_id: '' })).site_id, null, 'leer = ohne Standort');
+    // site_overview: nur nicht archivierte Räume, Pläne
+    const room2 = await api.saveLocation({ name: 'Archiv H', type: 'raum', site_id: site.id, archived: true });
+    const count = async () => { const s = (await api.listSites()).find((r) => r.id === site.id); return [s.space_count, s.plan_count]; };
+    assert.deepEqual(await count(), [1, 1]);
+    assert.equal((await api.saveSite({ id: site.id, sort: 21 })).space_count, 1, 'saveSite liefert die Ansicht');
+    // Löschen: nur Admin (sonst bleibt alles), nur ungenutzt
+    await rejects(api.deleteSite(site.id), 'not_authorized');
+    assert.ok((await api.listSites()).some((s) => s.id === site.id), 'nichts gelöscht');
+    await as(api, 'cristian');
+    await rejects(api.deleteSite('kein-uuid'), 'not_found');
+    await rejects(api.deleteSite(randomUUID()), 'not_found');
+    await rejects(api.deleteSite(site.id), 'in_use');
+    // Raum wird untergeordnet → Standort fällt weg (auch für seine Unterorte)
+    const moved = await api.saveLocation({ id: room.id, parent_id: hl.id });
+    assert.deepEqual([moved.site_id, moved.space_site_id, moved.site_name], [null, null, null]);
+    const boxNow = await api.getLocation(box.id);
+    assert.deepEqual([boxNow.space_site_id, boxNow.site_name, boxNow.root_id], [null, null, hl.id]);
+    const diff = (await api.listAudit({ entity: 'locations', entityId: room.id })).find((r) => r.action === 'update').details;
+    assert.deepEqual(diff.site_id, { alt: site.id, neu: null });
+    assert.deepEqual(await count(), [0, 1]);
+    await rejects(api.deleteSite(site.id), 'in_use');               // archivierter Raum und Plan hängen noch daran
+    await api.saveLocation({ id: room2.id, site_id: null });
+    await rejects(api.deleteSite(site.id), 'in_use');               // Plan
+    await api.saveFloorPlan({ id: fp.id, site_id: null });
+    await api.deleteSite(site.id);
+    assert.deepEqual(await api.listSites(), []);
+    assert.deepEqual((await api.listAudit({ entity: 'sites', entityId: site.id })).map((r) => r.action), ['delete', 'update', 'insert']);
+    await rejects(api.deleteSite(site.id), 'not_found');
+  });
+
+  test('gespeicherter Stand Version 3 ohne Standorte wird ohne Verlust ergänzt', async () => {
+    const storage = new MemoryStorage();
+    const a = fresh(storage);
+    await a.init();
+    await as(a, 'luca');
+    const { photo } = await a.importPhoto(png('plan.png'), { kind: 'plan', sha256: sha(93) });
+    const fp = await a.saveFloorPlan({ name: 'EG', photo_id: photo.id });
+    const before = (await a.listLocations({ includeArchived: true })).map((l) => [l.code, l.path, l.code_path]);
+    const old = JSON.parse(storage.getItem(STORAGE_KEY));
+    assert.equal(old.version, 3);
+    delete old.sites;
+    for (const l of old.locations) delete l.site_id;
+    for (const f of old.floor_plans) delete f.site_id;
+    storage.setItem(STORAGE_KEY, JSON.stringify(old));
+    const b = fresh(storage);
+    assert.deepEqual(await b.listSites(), []);
+    const locs = await b.listLocations({ includeArchived: true });
+    assert.deepEqual(locs.map((l) => [l.code, l.path, l.code_path]), before);
+    assert.ok(locs.every((l) => l.site_id === null && l.space_site_id === null && l.site_name === null));
+    assert.deepEqual((await b.listFloorPlans()).map((f) => [f.id, f.site_id, f.site_name, f.site_sort]), [[fp.id, null, null, null]]);
+    // weiterarbeiten: Standort anlegen und zuweisen, Version bleibt 3
+    const site = await b.saveSite({ name: 'Büro' });
+    const hl = await b.saveLocation({ id: locs.find((l) => l.code === 'L-0001').id, site_id: site.id });
+    assert.equal(hl.site_name, 'Büro');
+    const stored = JSON.parse(storage.getItem(STORAGE_KEY));
+    assert.deepEqual([stored.version, stored.sites.length], [3, 1]);
+  });
+});
+
 describe('KI-Regeln (Stand schema.sql)', () => {
   test('Produktrecherche in den Notizen, Einheiten, späterer Fehlversuch, SHA mit Leerzeichen, Fotos ohne Lagerort', async () => {
     const api = await demo();

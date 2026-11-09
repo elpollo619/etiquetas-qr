@@ -1,8 +1,8 @@
 // Demo-Modus: dieselbe API wie api-supabase.js (Vertrag: docs/ARCHITECTURE.md), Daten nur in diesem Browser
 // (localStorage, Schlüssel «lgr-demo:v1»; ohne localStorage im Speicher).
 // Regeln, Rechte und Fehlercodes entsprechen den Funktionen und Triggern in supabase/schema.sql.
-// «Lager organisieren» (Kategorien, Fotos, KI-Import, Prüfung, Aufgaben, Bereiche, Sets): js/api-demo-org.js.
-import { installOrgDemo, upgradeDb, seedCategories, orgViewIndex, orgInUse, orgAfterDelete } from './api-demo-org.js';
+// «Lager organisieren» (Kategorien, Fotos, KI-Import, Prüfung, Aufgaben, Bereiche, Sets, Pläne, Standorte): js/api-demo-org.js.
+import { installOrgDemo, upgradeDb, completeDb, seedCategories, orgViewIndex, orgInUse, orgAfterDelete } from './api-demo-org.js';
 
 export const STORAGE_KEY = 'lgr-demo:v1';   // Schlüssel bleibt; der Datenstand trägt seine eigene Version
 const VERSION = 3;                          // 2 = «Lager organisieren», 3 = Gebäudeplan (ältere Stände werden beim Laden übernommen)
@@ -31,7 +31,7 @@ const AUDIT_TABLE = {
 // Spalten wie in schema.sql
 const PROFILE_COLS = ['id', 'full_name', 'email', 'role', 'active', 'lang', 'created_at'];
 const LOCATION_COLS = ['id', 'code', 'name', 'type', 'parent_id', 'notes', 'archived', 'created_by', 'created_at', 'updated_at',
-  'short_code', 'responsible_id', 'organized_at', 'organized_by', 'cover_photo_id'];
+  'short_code', 'responsible_id', 'organized_at', 'organized_by', 'cover_photo_id', 'site_id'];
 const ARTICLE_COLS = ['id', 'code', 'name', 'description', 'art_no', 'category', 'brand', 'model', 'size', 'color', 'usage',
   'label_text', 'unit', 'stock', 'min_stock', 'location_id', 'notes', 'archived', 'created_by', 'created_at', 'updated_at',
   'category_id', 'product_url'];
@@ -44,8 +44,8 @@ const MOVEMENT_COLS = ['id', 'article_id', 'type', 'qty', 'stock_before', 'stock
   'user_id', 'note', 'request_id', 'created_at'];
 
 // Beschreibbare Spalten (wie GRANTs in schema.sql). Bestand/Status nie per Update.
-const LOCATION_INSERT = ['code', 'name', 'type', 'parent_id', 'notes', 'archived', 'short_code', 'responsible_id', 'cover_photo_id'];
-const LOCATION_UPDATE = ['name', 'type', 'parent_id', 'notes', 'archived', 'short_code', 'responsible_id', 'cover_photo_id'];
+const LOCATION_INSERT = ['code', 'name', 'type', 'parent_id', 'notes', 'archived', 'short_code', 'responsible_id', 'cover_photo_id', 'site_id'];
+const LOCATION_UPDATE = ['name', 'type', 'parent_id', 'notes', 'archived', 'short_code', 'responsible_id', 'cover_photo_id', 'site_id'];
 const ARTICLE_INSERT = ['code', 'name', 'description', 'art_no', 'category', 'brand', 'model', 'size', 'color', 'usage',
   'label_text', 'unit', 'stock', 'min_stock', 'location_id', 'notes', 'archived', 'category_id', 'product_url'];
 const ARTICLE_UPDATE = ['name', 'description', 'art_no', 'category', 'brand', 'model', 'size', 'color', 'usage',
@@ -205,6 +205,7 @@ function emptyDb() {
     inventories: [], inventory_counts: [], inventory_machine_checks: [], audit_log: [],
     // «Lager organisieren»
     categories: [], photos: [], detections: [], photo_hotspots: [], org_tasks: [], set_components: [], floor_plans: [],
+    sites: [],
   };
 }
 
@@ -253,7 +254,8 @@ export function createApi({ LgrError = FallbackLgrError, storage, storageKey = S
             parsed.version = VERSION;
             upgraded = true;
           }
-          if (parsed.version === VERSION) db = parsed;
+          // Standorte kamen ohne neue Version dazu: fehlende Tabelle/Spalten bei jedem Laden ergänzen (nur additiv)
+          if (parsed.version === VERSION) db = completeDb(parsed);
         }
       } catch { /* defekt → neu aufbauen */ }
     }
@@ -402,6 +404,7 @@ export function createApi({ LgrError = FallbackLgrError, storage, storageKey = S
     if (p.category_id && !db.categories.some((c) => c.id === p.category_id)) throw E('not_found');
     if (p.responsible_id && !profileOf(p.responsible_id)) throw E('not_found');
     if (p.cover_photo_id && !db.photos.some((ph) => ph.id === p.cover_photo_id)) throw E('not_found');
+    if (p.site_id && !db.sites.some((s) => s.id === p.site_id)) throw E('not_found');   // Standort (locations_site_id_fkey)
   }
   // Kurzcode eindeutig je Ebene (locations_short_code_uniq: coalesce(parent_id, 0) + short_code)
   function assertShortCodeFree(id, parentId, shortCode) {
@@ -420,19 +423,20 @@ export function createApi({ LgrError = FallbackLgrError, storage, storageKey = S
       if (!byParent.has(k)) byParent.set(k, []);
       byParent.get(k).push(l);
     }
-    // wie location_paths: Pfad, Tiefe, Raum (root_id) und code_path («HL-RG01-FA02», nur wenn jede Ebene einen Kurzcode hat)
+    // wie location_paths: Pfad, Tiefe, Raum (root_id) und code_path («HL-RG01-FA02», nur wenn jede Ebene einen Kurzcode hat);
+    // site = Standort des Raums (location_overview.space_site_id) – steht nicht im Code
     const idx = new Map();
     const stack = (byParent.get(null) || []).map((l) => ({
-      l, path: l.name, depth: 0, trail: [l.id], code: l.short_code || null, root: l.id,
+      l, path: l.name, depth: 0, trail: [l.id], code: l.short_code || null, root: l.id, site: l.site_id || null,
     }));
     while (stack.length) {
-      const { l, path, depth, trail, code, root } = stack.pop();
-      idx.set(l.id, { path, depth, code, root });
+      const { l, path, depth, trail, code, root, site } = stack.pop();
+      idx.set(l.id, { path, depth, code, root, site });
       for (const c of byParent.get(l.id) || []) {
         if (trail.includes(c.id)) continue;
         stack.push({
           l: c, path: `${path} / ${c.name}`, depth: depth + 1, trail: [...trail, c.id],
-          code: code && c.short_code ? `${code}-${c.short_code}` : null, root,
+          code: code && c.short_code ? `${code}-${c.short_code}` : null, root, site,
         });
       }
     }
@@ -468,6 +472,7 @@ export function createApi({ LgrError = FallbackLgrError, storage, storageKey = S
       depth: (id) => (id && paths.has(id) ? paths.get(id).depth : null),
       codePath: (id) => (id && paths.has(id) ? paths.get(id).code : null),
       rootId: (id) => (id && paths.has(id) ? paths.get(id).root : null),
+      spaceSiteId: (id) => (id && paths.has(id) ? paths.get(id).site : null),
       name: (id) => (id && names.has(id) ? names.get(id) : null),
       machines, articles, openLoan, lastLoan,
       photo: { article: photoIndex('article'), machine: photoIndex('machine'), location: photoIndex('location') },
@@ -476,12 +481,15 @@ export function createApi({ LgrError = FallbackLgrError, storage, storageKey = S
   }
   function vLocation(l, c) {
     const cover = c.org.photoPath(l.cover_photo_id);
+    const site = c.spaceSiteId(l.id);
     return {
       ...pick(l, LOCATION_COLS), path: c.path(l.id), depth: c.depth(l.id), code_path: c.codePath(l.id), root_id: c.rootId(l.id),
       photo_path: cover ?? c.photo.location(l.id),   // Übersichtsfoto, sonst Hauptfoto der Anhänge
       cover_photo_path: cover,
       responsible_name: c.name(l.responsible_id),
       organized_by_name: c.name(l.organized_by),
+      space_site_id: site,                           // Standort des Raums (auch für Möbel/Unterorte)
+      site_name: c.org.siteName(site),
     };
   }
   const vArticle = (a, c) => ({
@@ -564,6 +572,8 @@ export function createApi({ LgrError = FallbackLgrError, storage, storageKey = S
       if (!LOCATION_TYPES.includes(type)) throw E('invalid_type');
       const parent = p.parent_id ?? null;
       if (parent && !locExists(parent)) throw E('invalid_location');
+      // location_site_top_only (Trigger vor der Fremdschlüsselprüfung): ein Unterort hat keinen eigenen Standort
+      if (parent && has(p, 'site_id')) p.site_id = null;
       assertOrgRefs('locations', p);
       const code = takeCode('locations', 'L-', p.code);
       assertShortCodeFree(null, parent, p.short_code);
@@ -572,7 +582,7 @@ export function createApi({ LgrError = FallbackLgrError, storage, storageKey = S
         id: uuid(), code, name: p.name, type, parent_id: parent,
         notes: p.notes ?? null, archived: p.archived ?? false, created_by: uid(), created_at: t, updated_at: t,
         short_code: p.short_code ?? null, responsible_id: p.responsible_id ?? null, organized_at: null, organized_by: null,
-        cover_photo_id: p.cover_photo_id ?? null,
+        cover_photo_id: p.cover_photo_id ?? null, site_id: p.site_id ?? null,
       };
       db.locations.push(row);
       audit('insert', 'locations', row.id, omit(row, ['created_at', 'updated_at']));
@@ -590,6 +600,8 @@ export function createApi({ LgrError = FallbackLgrError, storage, storageKey = S
       if (p.parent_id && !locExists(p.parent_id)) throw E('invalid_location');
       assertNoCycle(row.id, p.parent_id);
     }
+    // location_site_top_only: wird ein Lagerort untergeordnet (oder ist er es schon), fällt sein Standort weg
+    if ((has(p, 'parent_id') ? p.parent_id : row.parent_id) && (has(p, 'site_id') || row.site_id)) p.site_id = null;
     assertOrgRefs('locations', p);
     if (has(p, 'short_code') || has(p, 'parent_id')) {
       assertShortCodeFree(row.id, has(p, 'parent_id') ? p.parent_id : row.parent_id, has(p, 'short_code') ? p.short_code : row.short_code);

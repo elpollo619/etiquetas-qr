@@ -492,6 +492,31 @@ create table if not exists public.floor_plans (
   updated_at  timestamptz not null default now()
 );
 
+-- Standorte (Adressen, z. B. Büro und weitere Lager). Ein Raum (oberster Lagerort) und ein Gebäudeplan gehören
+-- zu höchstens einem Standort. Der Standort steht NICHT im lesbaren Code (G1-RG01 bleibt) – er gruppiert nur;
+-- Kurzcodes der Räume bleiben deshalb über alle Standorte eindeutig.
+create table if not exists public.sites (
+  id          uuid primary key default gen_random_uuid(),
+  name        text not null check (length(trim(name)) between 1 and 80),
+  address     text check (address is null or length(address) <= 200),
+  sort        int not null default 0,
+  notes       text check (notes is null or length(notes) <= 2000),
+  created_by  uuid references public.profiles(id),
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
+);
+create unique index if not exists sites_name_uniq on public.sites (lower(trim(name)));
+alter table public.locations   add column if not exists site_id uuid references public.sites(id) on delete restrict;
+alter table public.floor_plans add column if not exists site_id uuid references public.sites(id) on delete restrict;
+create index if not exists locations_site_idx   on public.locations (site_id)   where site_id is not null;
+create index if not exists floor_plans_site_idx on public.floor_plans (site_id) where site_id is not null;
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'locations_site_top_chk') then
+    alter table public.locations add constraint locations_site_top_chk check (site_id is null or parent_id is null);
+  end if;
+end $$;
+
 -- Organisationsplan: Aufgaben je Raum/Lagerort
 create table if not exists public.org_tasks (
   id           uuid primary key default gen_random_uuid(),
@@ -804,6 +829,23 @@ drop trigger if exists floor_plans_updated on public.floor_plans;
 create trigger floor_plans_updated before update on public.floor_plans for each row execute function public.set_updated_at();
 drop trigger if exists floor_plans_audit on public.floor_plans;
 create trigger floor_plans_audit after insert or update or delete on public.floor_plans for each row execute function public.audit_row();
+drop trigger if exists sites_created_by on public.sites;
+create trigger sites_created_by before insert on public.sites for each row execute function public.set_created_by();
+drop trigger if exists sites_updated on public.sites;
+create trigger sites_updated before update on public.sites for each row execute function public.set_updated_at();
+drop trigger if exists sites_audit on public.sites;
+create trigger sites_audit after insert or update or delete on public.sites for each row execute function public.audit_row();
+
+-- Der Standort gilt nur für Räume (oberste Lagerorte): wird ein Lagerort untergeordnet, fällt sein Standort weg
+create or replace function public.location_site_top_only() returns trigger
+language plpgsql set search_path = '' as $$
+begin
+  if new.parent_id is not null then new.site_id := null; end if;
+  return new;
+end $$;
+drop trigger if exists locations_site_top_only on public.locations;
+create trigger locations_site_top_only before insert or update on public.locations
+  for each row execute function public.location_site_top_only();
 
 -- =====================================================================
 --  Geschäftslogik (nur über diese Funktionen; sicher gegen gleichzeitige Zugriffe)
@@ -1577,7 +1619,7 @@ end $$;
 -- =====================================================================
 --  Ansichten (respektieren die Zugriffsregeln des angemeldeten Benutzers)
 -- =====================================================================
-drop view if exists public.floor_plan_overview,
+drop view if exists public.site_overview, public.floor_plan_overview,
                     public.org_stats, public.space_overview, public.org_task_overview, public.detection_overview,
                     public.photo_overview, public.category_paths,
                     public.movement_overview, public.loan_overview, public.article_overview,
@@ -1612,9 +1654,13 @@ select l.*, lp.path, lp.depth, lp.code_path, lp.root_id,
        coalesce(cp.path, ph.path) as photo_path,
        cp.path as cover_photo_path,
        rp.full_name as responsible_name,
-       ob.full_name as organized_by_name
+       ob.full_name as organized_by_name,
+       rl.site_id as space_site_id,          -- Standort des Raums (auch für Möbel/Unterorte)
+       st.name as site_name
   from public.locations l
   left join public.location_paths lp on lp.id = l.id
+  left join public.locations rl on rl.id = lp.root_id
+  left join public.sites st on st.id = rl.site_id
   left join public.photos cp on cp.id = l.cover_photo_id
   left join public.profiles rp on rp.id = l.responsible_id
   left join public.profiles ob on ob.id = l.organized_by
@@ -1741,9 +1787,17 @@ select d.*,
 create view public.floor_plan_overview with (security_invoker = true) as
 select f.*, p.path as photo_path, p.width as photo_width, p.height as photo_height,
        (select count(*) from public.photo_hotspots h where h.photo_id = f.photo_id) as area_count,
-       (select count(*) from public.photo_hotspots h where h.photo_id = f.photo_id and h.location_id is not null) as linked_count
+       (select count(*) from public.photo_hotspots h where h.photo_id = f.photo_id and h.location_id is not null) as linked_count,
+       st.name as site_name, st.sort as site_sort
   from public.floor_plans f
-  join public.photos p on p.id = f.photo_id;
+  join public.photos p on p.id = f.photo_id
+  left join public.sites st on st.id = f.site_id;
+
+create view public.site_overview with (security_invoker = true) as
+select s.*,
+       (select count(*) from public.locations l where l.site_id = s.id and l.parent_id is null and not l.archived) as space_count,
+       (select count(*) from public.floor_plans f where f.site_id = s.id) as plan_count
+  from public.sites s;
 
 create view public.org_task_overview with (security_invoker = true) as
 select t.*, lp.path as location_path, lp.root_id,
@@ -1944,6 +1998,7 @@ alter table public.org_tasks      enable row level security;
 alter table public.set_components enable row level security;
 
 grant update (short_code, responsible_id, cover_photo_id) on public.locations to authenticated;
+grant update (site_id) on public.locations to authenticated;
 grant update (category_id, product_url) on public.articles to authenticated;
 grant update (category_id, responsible_id, is_set, product_url) on public.machines to authenticated;
 grant insert (location_id) on public.inventories to authenticated;
@@ -2010,8 +2065,8 @@ drop policy if exists set_components_delete on public.set_components;
 create policy set_components_delete on public.set_components for delete to authenticated using ((select public.is_staff()));
 
 alter table public.floor_plans enable row level security;
-grant insert (name, sort, photo_id, notes) on public.floor_plans to authenticated;
-grant update (name, sort, notes) on public.floor_plans to authenticated;
+grant insert (name, sort, photo_id, notes, site_id) on public.floor_plans to authenticated;
+grant update (name, sort, notes, site_id) on public.floor_plans to authenticated;
 grant delete on public.floor_plans to authenticated;
 drop policy if exists floor_plans_read on public.floor_plans;
 create policy floor_plans_read on public.floor_plans for select to authenticated using ((select public.is_active_user()));
@@ -2021,6 +2076,22 @@ drop policy if exists floor_plans_update on public.floor_plans;
 create policy floor_plans_update on public.floor_plans for update to authenticated using ((select public.is_staff())) with check ((select public.is_staff()));
 drop policy if exists floor_plans_delete on public.floor_plans;
 create policy floor_plans_delete on public.floor_plans for delete to authenticated using ((select public.is_admin()));
+
+-- Standorte: alle aktiven Benutzer lesen; Lagerverantwortliche/Admins anlegen und ändern; nur Admins löschen
+-- (ein Standort mit Räumen oder Plänen lässt sich nicht löschen: Fremdschlüssel «restrict»)
+alter table public.sites enable row level security;
+revoke insert, update, delete on public.sites from authenticated;
+grant insert (name, address, sort, notes) on public.sites to authenticated;
+grant update (name, address, sort, notes) on public.sites to authenticated;
+grant delete on public.sites to authenticated;
+drop policy if exists sites_read on public.sites;
+create policy sites_read on public.sites for select to authenticated using ((select public.is_active_user()));
+drop policy if exists sites_insert on public.sites;
+create policy sites_insert on public.sites for insert to authenticated with check ((select public.is_staff()));
+drop policy if exists sites_update on public.sites;
+create policy sites_update on public.sites for update to authenticated using ((select public.is_staff())) with check ((select public.is_staff()));
+drop policy if exists sites_delete on public.sites;
+create policy sites_delete on public.sites for delete to authenticated using ((select public.is_admin()));
 
 -- Funktionen: nur angemeldete Benutzer (nicht anonym) dürfen sie aufrufen
 do $$
@@ -2039,14 +2110,14 @@ begin
                          'current_role_name','is_active_user','is_staff','is_admin',
                          'handle_new_user','set_updated_at','set_created_by','assign_code','check_location_parent',
                          'machine_insert_guard','article_initial_movement','audit_row',
-                         'promote_bootstrap_admin','handle_user_confirmed')
+                         'promote_bootstrap_admin','handle_user_confirmed','location_site_top_only')
   loop
     execute format('revoke execute on function %s from public, anon, authenticated', f.sig);
     if f.proname not in ('handle_new_user','set_updated_at','set_created_by','assign_code','check_location_parent',
                          'machine_insert_guard','article_initial_movement','audit_row',
                          'promote_bootstrap_admin','handle_user_confirmed',
                          'check_category_parent','photo_insert_defaults','photo_delete_guard','org_task_status','product_summary',
-                         'location_root','category_by_path','jnum') then   -- nur intern in anderen Funktionen
+                         'location_root','category_by_path','jnum','location_site_top_only') then   -- nur intern in anderen Funktionen
       execute format('grant execute on function %s to authenticated', f.sig);
     end if;
   end loop;

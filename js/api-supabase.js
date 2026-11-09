@@ -31,8 +31,8 @@ const AUDIT_TABLE = {
 const AUTH_EVENTS = new Set(['SIGNED_IN', 'SIGNED_OUT', 'PASSWORD_RECOVERY', 'USER_UPDATED']);
 
 // Spalten, die geschrieben werden dürfen (siehe GRANTs in schema.sql). Bestand und Status nie per Update.
-const LOCATION_INSERT = ['code', 'name', 'type', 'parent_id', 'notes', 'archived', 'short_code', 'responsible_id', 'cover_photo_id'];
-const LOCATION_UPDATE = ['name', 'type', 'parent_id', 'notes', 'archived', 'short_code', 'responsible_id', 'cover_photo_id'];
+const LOCATION_INSERT = ['code', 'name', 'type', 'parent_id', 'notes', 'archived', 'short_code', 'responsible_id', 'cover_photo_id', 'site_id'];
+const LOCATION_UPDATE = ['name', 'type', 'parent_id', 'notes', 'archived', 'short_code', 'responsible_id', 'cover_photo_id', 'site_id'];
 const ARTICLE_INSERT = ['code', 'name', 'description', 'art_no', 'category', 'brand', 'model', 'size', 'color', 'usage',
   'label_text', 'unit', 'stock', 'min_stock', 'location_id', 'notes', 'archived', 'category_id', 'product_url'];
 const ARTICLE_UPDATE = ['name', 'description', 'art_no', 'category', 'brand', 'model', 'size', 'color', 'usage',
@@ -274,10 +274,11 @@ export function createApi({ LgrError, client } = {}) {
         if (/categories_name/.test(cn)) return E('duplicate', 'category');
         return E('duplicate', cn || null);
       }
+      case '23001': return E('in_use');   // ON DELETE RESTRICT (ab Postgres 18 eigener Code)
       case '23503': {
         if (/update or delete on table/i.test(msg)) return E('in_use');
         const cn = constraintName(msg);
-        if (/responsible|cover_photo|category/.test(cn)) return E('not_found');
+        if (/responsible|cover_photo|category|site/.test(cn)) return E('not_found');
         if (/location|parent/.test(cn)) return E('invalid_location');
         if (/borrower/.test(cn)) return E('invalid_borrower');
         return E('not_found');
@@ -1078,6 +1079,34 @@ export function createApi({ LgrError, client } = {}) {
     }),
 
     // ---- Gebäudepläne (Grundriss je Stockwerk; Bild = Foto mit kind 'plan', Räume = Bereiche) ----
+    // ---- Standorte (Adressen; gruppieren Räume und Pläne, stehen nicht im Code) ----
+    listSites: wrap(async () => (await q(sb.from('site_overview').select('*').order('sort').order('name').order('id'))) || []),
+    saveSite: wrap(async (obj) => {
+      if (!obj || typeof obj !== 'object') throw E('invalid_value');
+      const patch = {};
+      if (has(obj, 'name')) { patch.name = String(obj.name ?? '').trim(); if (!patch.name) throw E('name_required'); if (patch.name.length > 80) throw E('invalid_value'); }
+      if (has(obj, 'address')) { patch.address = trimOrNull(obj.address); if (patch.address && patch.address.length > 200) throw E('invalid_value'); }
+      if (has(obj, 'sort')) patch.sort = Math.round(Number(obj.sort) || 0);
+      if (has(obj, 'notes')) { patch.notes = trimOrNull(obj.notes); if (patch.notes && patch.notes.length > 2000) throw E('invalid_value'); }
+      let id = obj.id;
+      if (!id) {
+        if (!patch.name) throw E('name_required');
+        id = (await q(sb.from('sites').insert(patch).select('id').single())).id;
+      } else {
+        if (!isUuid(id)) throw E('not_found');
+        if (Object.keys(patch).length) {
+          const rows = await q(sb.from('sites').update(patch).eq('id', id).select('id'));
+          if (!rows || !rows.length) throw await zeroRowsError('sites', id);
+        }
+      }
+      return getOne('site_overview', 'id', id);
+    }),
+    deleteSite: wrap(async (id) => {
+      if (!isUuid(id)) throw E('not_found');
+      const rows = await q(sb.from('sites').delete().eq('id', id).select('id'));
+      if (!rows || !rows.length) throw await zeroRowsError('sites', id);
+    }),
+
     listFloorPlans: wrap(async () => (await q(sb.from('floor_plan_overview').select('*').order('sort').order('name').order('id'))) || []),
     saveFloorPlan: wrap(async (obj) => {
       if (!obj || typeof obj !== 'object') throw E('invalid_value');
@@ -1085,6 +1114,10 @@ export function createApi({ LgrError, client } = {}) {
       if (has(obj, 'name')) { patch.name = String(obj.name ?? '').trim(); if (!patch.name) throw E('name_required'); }
       if (has(obj, 'sort')) patch.sort = Math.round(Number(obj.sort) || 0);
       if (has(obj, 'notes')) patch.notes = trimOrNull(obj.notes);
+      if (has(obj, 'site_id')) {
+        patch.site_id = obj.site_id || null;
+        if (patch.site_id && !isUuid(patch.site_id)) throw E('invalid_value');
+      }
       let id = obj.id;
       if (!id) {
         if (!patch.name) throw E('name_required');

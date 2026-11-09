@@ -190,6 +190,7 @@ registerStrings({
     'audit.a.ki_zusammenfuehren': 'Erkennungen zusammengeführt', 'audit.a.organisiert': 'Organisationsstatus',
     'audit.e.categories': 'Kategorien', 'audit.e.photos': 'Fotos (Import)', 'audit.e.detections': 'KI-Erkennungen',
     'audit.e.org_tasks': 'Organisationsaufgaben', 'audit.e.photo_hotspots': 'Bereiche auf Fotos', 'audit.e.set_components': 'Set-Komponenten',
+    'audit.e.sites': 'Adressen', 'audit.e.floor_plans': 'Gebäudepläne', 'audit.f.site_id': 'Adresse', 'audit.f.address': 'Strasse, PLZ Ort',
     'audit.f.short_code': 'Kurzcode', 'audit.f.responsible_id': 'Verantwortlich', 'audit.f.cover_photo_id': 'Übersichtsfoto',
     'audit.f.category_id': 'Kategorie', 'audit.f.is_set': 'Set', 'audit.f.product_url': 'Herstellerseite', 'audit.f.title': 'Titel',
     'audit.f.details': 'Details', 'audit.f.assigned_to': 'Zugewiesen an', 'audit.f.sort': 'Reihenfolge', 'audit.f.label': 'Beschriftung',
@@ -202,6 +203,7 @@ registerStrings({
     'audit.a.ki_zusammenfuehren': 'Deteções fundidas', 'audit.a.organisiert': 'Estado de organização',
     'audit.e.categories': 'Categorias', 'audit.e.photos': 'Fotos (importação)', 'audit.e.detections': 'Deteções IA',
     'audit.e.org_tasks': 'Tarefas de organização', 'audit.e.photo_hotspots': 'Áreas nas fotos', 'audit.e.set_components': 'Componentes de conjunto',
+    'audit.e.sites': 'Endereços', 'audit.e.floor_plans': 'Plantas do edifício', 'audit.f.site_id': 'Endereço', 'audit.f.address': 'Rua, código postal, localidade',
     'audit.f.short_code': 'Código curto', 'audit.f.responsible_id': 'Responsável', 'audit.f.cover_photo_id': 'Foto geral',
     'audit.f.category_id': 'Categoria', 'audit.f.is_set': 'Conjunto', 'audit.f.product_url': 'Página do fabricante', 'audit.f.title': 'Título',
     'audit.f.details': 'Detalhes', 'audit.f.assigned_to': 'Atribuída a', 'audit.f.sort': 'Ordem', 'audit.f.label': 'Rótulo',
@@ -214,6 +216,7 @@ registerStrings({
     'audit.a.ki_zusammenfuehren': 'Detecciones fusionadas', 'audit.a.organisiert': 'Estado de organización',
     'audit.e.categories': 'Categorías', 'audit.e.photos': 'Fotos (importación)', 'audit.e.detections': 'Detecciones IA',
     'audit.e.org_tasks': 'Tareas de organización', 'audit.e.photo_hotspots': 'Áreas en fotos', 'audit.e.set_components': 'Componentes de set',
+    'audit.e.sites': 'Direcciones', 'audit.e.floor_plans': 'Planos del edificio', 'audit.f.site_id': 'Dirección', 'audit.f.address': 'Calle, código postal, localidad',
     'audit.f.short_code': 'Código corto', 'audit.f.responsible_id': 'Responsable', 'audit.f.cover_photo_id': 'Foto general',
     'audit.f.category_id': 'Categoría', 'audit.f.is_set': 'Set', 'audit.f.product_url': 'Página del fabricante', 'audit.f.title': 'Título',
     'audit.f.details': 'Detalles', 'audit.f.assigned_to': 'Asignada a', 'audit.f.sort': 'Orden', 'audit.f.label': 'Etiqueta',
@@ -223,7 +226,7 @@ registerStrings({
 });
 
 const AREAS = ['machines', 'articles', 'locations', 'loans', 'profiles', 'inventories', 'attachments',
-  'categories', 'photos', 'detections', 'org_tasks', 'photo_hotspots', 'set_components'];
+  'categories', 'photos', 'detections', 'org_tasks', 'photo_hotspots', 'set_components', 'floor_plans', 'sites'];
 const ACTION_PILL = {
   insert: 'pill-ok', update: 'pill-info', delete: 'pill-danger', ausleihen: 'pill-ausgeliehen', zurueckgeben: 'pill-verfuegbar',
   status: 'pill-warn', korrektur: 'pill-warn', mitarbeiter: 'pill-reserviert', inventur: 'pill-info',
@@ -299,6 +302,8 @@ function objectInfo(row, maps) {
   if (e === 'org_tasks') return { label: (typeof d.title === 'string' ? d.title : (d.title && typeof d.title.neu === 'string' ? d.title.neu : '')), href: '' };
   if (e === 'photo_hotspots') return { label: (typeof d.label === 'string' ? d.label : (d.label && typeof d.label.neu === 'string' ? d.label.neu : '')), href: '' };
   if (e === 'set_components') return { label: (typeof d.name === 'string' ? d.name : (d.name && typeof d.name.neu === 'string' ? d.name.neu : '')), href: '' };
+  if (e === 'sites') return { label: (typeof d.name === 'string' ? d.name : (d.name && typeof d.name.neu === 'string' ? d.name.neu : '')), href: id ? '#/organisieren?site=' + encodeURIComponent(id) : '' };
+  if (e === 'floor_plans') return { label: (typeof d.name === 'string' ? d.name : (d.name && typeof d.name.neu === 'string' ? d.name.neu : '')), href: id ? '#/organisieren/plan?plan=' + encodeURIComponent(id) : '' };
   return { label: '', href: '' };
 }
 

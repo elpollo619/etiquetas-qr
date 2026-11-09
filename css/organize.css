@@ -452,3 +452,14 @@ span.org-fp { cursor: default; }
 @media (prefers-reduced-motion: reduce) {
   .org-progress > span, .org-dot::before, .org-howto summary::after { transition: none; }
 }
+
+/* Standorte (Adressen): Filter, Gruppenköpfe, Kennzeichen */
+.org-site-nav { gap: 6px; flex-wrap: wrap; margin: 4px 0 12px; }
+.org-site-nav .btn .ic { width: 16px; height: 16px; }
+.org-site-group + .org-site-group { margin-top: 18px; }
+.org-site-h { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; margin: 14px 0 10px; font-size: 1.02rem; }
+.org-site-h .ic { width: 18px; height: 18px; align-self: center; }
+.org-site-h small { font-weight: 400; font-size: .85rem; }
+.org-site-tag, .org-site-line { display: inline-flex; align-items: center; gap: 4px; }
+.org-site-tag .ic, .org-site-line .ic { width: 15px; height: 15px; }
+.org-site-line { margin: 0 0 8px; }
