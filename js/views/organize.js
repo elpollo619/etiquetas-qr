@@ -358,6 +358,14 @@ registerStrings({
     'organize.fp.areaDeleted': 'Bereich gelöscht',
     'organize.fp.areaDeleteMsg': 'Der Bereich «{name}» wird vom Plan entfernt. Ein verknüpfter Raum bleibt bestehen.',
     'organize.fp.openAria': '{name} öffnen – {status}',
+    'organize.fp.itemAria': '{name} öffnen – {code}',
+    'organize.fp.items': 'Möbel: {n}',
+    'organize.fp.zoom': 'Zoom',
+    'organize.fp.zoomIn': 'Plan vergrössern',
+    'organize.fp.zoomOut': 'Plan verkleinern',
+    'organize.fp.zoomFit': 'Ganzer Plan',
+    'organize.fp.mode.existingLoc': 'Mit bestehendem Lagerort verknüpfen',
+    'organize.fp.locField': 'Raum oder Möbel',
     'organize.fp.unlinkedAria': '{name} – noch nicht angelegt',
     'organize.fp.linkedLabel': 'verknüpft',
     'organize.fp.onPlan': 'Auf dem Plan',
@@ -704,6 +712,14 @@ registerStrings({
     'organize.fp.areaDeleted': 'Zona eliminada',
     'organize.fp.areaDeleteMsg': 'A zona «{name}» é removida da planta. Um espaço ligado mantém-se.',
     'organize.fp.openAria': 'Abrir {name} – {status}',
+    'organize.fp.itemAria': 'Abrir {name} – {code}',
+    'organize.fp.items': 'Móveis: {n}',
+    'organize.fp.zoom': 'Zoom',
+    'organize.fp.zoomIn': 'Ampliar a planta',
+    'organize.fp.zoomOut': 'Reduzir a planta',
+    'organize.fp.zoomFit': 'Planta inteira',
+    'organize.fp.mode.existingLoc': 'Ligar a uma localização existente',
+    'organize.fp.locField': 'Espaço ou móvel',
     'organize.fp.unlinkedAria': '{name} – ainda não criado',
     'organize.fp.linkedLabel': 'ligado',
     'organize.fp.onPlan': 'Na planta',
@@ -1050,6 +1066,14 @@ registerStrings({
     'organize.fp.areaDeleted': 'Zona eliminada',
     'organize.fp.areaDeleteMsg': 'La zona «{name}» se quita del plano. Un espacio vinculado se mantiene.',
     'organize.fp.openAria': 'Abrir {name} – {status}',
+    'organize.fp.itemAria': 'Abrir {name} – {code}',
+    'organize.fp.items': 'Muebles: {n}',
+    'organize.fp.zoom': 'Zoom',
+    'organize.fp.zoomIn': 'Ampliar el plano',
+    'organize.fp.zoomOut': 'Reducir el plano',
+    'organize.fp.zoomFit': 'Plano completo',
+    'organize.fp.mode.existingLoc': 'Vincular con una ubicación existente',
+    'organize.fp.locField': 'Espacio o mueble',
     'organize.fp.unlinkedAria': '{name} – todavía no creado',
     'organize.fp.linkedLabel': 'vinculado',
     'organize.fp.onPlan': 'En el plano',
@@ -2946,7 +2970,7 @@ const STATUS_COLOR = {
   zu_pruefen: '#c0392b', in_organisation: '#1e6fb0', organisiert: '#1f8a4c',
 };
 const LINKED_COLOR = '#4f7396';
-const planUi = { editing: null };
+const planUi = { editing: null, zoom: 1 };
 const PLAN_HREF = (id) => '#/organisieren/plan' + (id ? '?plan=' + enc(id) : '');
 
 /** Kurzcode-Vorschlag für einen neuen Raum aus dem Namen («Kellerabteil 3» → «K3», «Büro» → «BU»), frei auf oberster Ebene */
@@ -2959,28 +2983,62 @@ function suggestRoomCode(name, used) {
   for (let n = 2; n < 100; n++) { const c = (base + n).slice(0, 10); if (!used.has(c)) return c; }
   return '';
 }
+/** Möbel (oder anderer Unterort) auf dem Plan: verknüpft, aber kein Raum (oberster Lagerort) – sonst null */
+function planItemLoc(P, h) {
+  if (!h.location_id || P.spaceById.has(h.location_id)) return null;
+  const l = P.locById.get(h.location_id);
+  return l && l.parent_id ? l : null;
+}
 function planAreaName(P, h) {
   const sp = h.location_id ? P.spaceById.get(h.location_id) : null;
-  return clean(h.label) || (sp && sp.name) || h.location_name || '?';
+  const it = sp ? null : planItemLoc(P, h);
+  return clean(h.label) || (sp && sp.name) || (it && it.name) || h.location_name || '?';
 }
 function planAreaColor(P, h) {
   if (!h.location_id) return null;
   const sp = P.spaceById.get(h.location_id);
-  return (sp && STATUS_COLOR[sp.org_status]) || LINKED_COLOR;
+  if (sp) return STATUS_COLOR[sp.org_status] || LINKED_COLOR;
+  // Möbel in der Farbe ihres Raums
+  const it = planItemLoc(P, h);
+  const room = it && it.root_id ? P.spaceById.get(it.root_id) : null;
+  return (room && STATUS_COLOR[room.org_status]) || LINKED_COLOR;
 }
-function planAreaHtml(P, h, editing) {
+/** Grössere Bereiche zuerst zeichnen, damit Möbel (klein) über ihrem Raum liegen und anklickbar bleiben */
+const areaSize = (h) => { const g = hsGeom(h); return g.w ? g.w * g.h : 0; };
+/** Räume, in deren linker oberer Ecke ein kleinerer Raum liegt (z. B. WC im Büro): Beschriftung oben rechts,
+ *  sonst verdecken sich die beiden Beschriftungen */
+function planAltLabelIds(P, areas) {
+  const rooms = areas.filter((h) => hsGeom(h).w && !planItemLoc(P, h));
+  const ids = new Set();
+  for (const r of rooms) {
+    const g = hsGeom(r);
+    const px = g.x + 0.004, py = g.y + 0.006;
+    if (rooms.some((o) => { if (o === r || areaSize(o) >= areaSize(r)) return false; const q = hsGeom(o); return px >= q.x && px <= q.x + q.w && py >= q.y && py <= q.y + q.h; })) ids.add(r.id);
+  }
+  return ids;
+}
+function planAreaHtml(P, h, editing, ar = 1.414, altLabel = false) {
   const g = hsGeom(h);
   const sp = h.location_id ? P.spaceById.get(h.location_id) : null;
+  const it = sp ? null : planItemLoc(P, h);
   const name = planAreaName(P, h);
   const color = planAreaColor(P, h);
-  const cls = `org-hs org-fp ${g.w ? 'rect' : 'pt'} ${h.location_id ? 'linked' : 'unlinked'}${g.x > 0.7 ? ' lbl-left' : ''}`;
+  // schmale, hohe Möbel (Regal an der Wand) bekommen eine senkrechte Beschriftung
+  const tall = !!(it && g.w && g.h && g.h / (g.w * ar) > 1.6);
+  const cls = `org-hs org-fp ${g.w ? 'rect' : 'pt'} ${h.location_id ? 'linked' : 'unlinked'}${it ? ' item' : ''}${tall ? ' tall' : ''}${altLabel ? ' lbl-alt' : ''}${g.x > 0.7 ? ' lbl-left' : ''}`;
   const style = geomStyle(g) + (color ? `;--c:${color}` : '');
-  const inner = `<span class="org-hs-label">${esc(name)}</span>`;
+  const short = it ? (clean(h.label) || it.short_code || name) : name;
+  const inner = `<span class="org-hs-label">${esc(short)}</span>`;
   if (editing) {
     return `<button type="button" class="${cls}" style="${style}" data-hs="${esc(h.id)}" ${geomData(g)}${color ? ` data-c="${color}"` : ''}
-      aria-label="${esc(t('organize.hs.editAria', { name }))}">${inner}${g.w ? HANDLES : ''}</button>`;
+      aria-label="${esc(t('organize.hs.editAria', { name }))}"${it ? ` title="${esc(name)}"` : ''}>${inner}${g.w ? HANDLES : ''}</button>`;
   }
-  const code = (sp && sp.code) || h.location_code;
+  const code = (sp && sp.code) || (it && it.code) || h.location_code;
+  if (h.location_id && code && it) {
+    const readable = it.code_path || it.short_code || code;
+    return `<a class="${cls}" style="${style}" href="#/o/${enc(code)}" title="${esc(name + ' · ' + readable)}"
+      aria-label="${esc(t('organize.fp.itemAria', { name, code: readable }))}">${inner}</a>`;
+  }
   if (h.location_id && code) {
     return `<a class="${cls}" style="${style}" href="#/o/${enc(code)}"
       aria-label="${esc(t('organize.fp.openAria', { name, status: sp ? orgStatusLabel(sp.org_status) : t('organize.fp.linkedLabel') }))}">${inner}</a>`;
@@ -2988,10 +3046,50 @@ function planAreaHtml(P, h, editing) {
   if (P.staff) return `<button type="button" class="${cls}" style="${style}" data-unlinked="${esc(h.id)}" aria-label="${esc(t('organize.fp.unlinkedAria', { name }))}">${inner}</button>`;
   return `<span class="${cls}" style="${style}" role="img" aria-label="${esc(t('organize.fp.unlinkedAria', { name }))}">${inner}</span>`;
 }
+const planAr = (plan) => (num(plan.photo_width) && num(plan.photo_height) ? num(plan.photo_width) / num(plan.photo_height) : 1.414);
+const PLAN_ZOOMS = [1, 1.5, 2, 3, 4];
 function planStageHtml(plan, inner, extraCls = '') {
-  const ar = num(plan.photo_width) && num(plan.photo_height) ? num(plan.photo_width) / num(plan.photo_height) : 1.414;
-  return `<div class="org-plan-stage${extraCls}" data-stage style="--ar:${ar.toFixed(5)}">
+  const ar = planAr(plan);
+  return `<div class="org-plan-stage${extraCls}" data-stage style="--ar:${ar.toFixed(5)};--zoom:${planUi.zoom || 1}">
     ${thumbHtml(plan.photo_path, t('organize.fp.planAlt', { name: plan.name }), 'org-plan-img', 'layers')}<div class="org-layer" data-layer>${inner}</div></div>`;
+}
+
+/** Zoom des Plans (− / + / Ganzer Plan). Beim ersten Vergrössern wird waagrecht auf die eingezeichneten Bereiche
+ *  geschwenkt, danach bleibt die Mitte des sichtbaren Ausschnitts stehen. Die Seite selbst wird nicht gescrollt,
+ *  damit die Zoom-Knöpfe unter dem Finger/Mauszeiger bleiben (sonst öffnet ein zweiter Klick einen Raum). */
+function bindPlanZoom(panel, stage, areas) {
+  const sc = stage.closest('.org-plan-scroll');
+  const val = panel.querySelector('[data-zoomval]');
+  const btns = [...panel.querySelectorAll('[data-zoom]')];
+  const update = () => {
+    const i = PLAN_ZOOMS.indexOf(planUi.zoom);
+    for (const b of btns) {
+      const d = Number(b.dataset.zoom);
+      b.disabled = d > 0 ? i >= PLAN_ZOOMS.length - 1 : i <= 0;
+    }
+    if (val) val.textContent = Math.round(planUi.zoom * 100) + ' %';
+  };
+  const bboxCenterX = () => {
+    let x0 = 1, x1 = 0;
+    for (const h of areas) { const g = hsGeom(h); x0 = Math.min(x0, g.x); x1 = Math.max(x1, g.x + (g.w || 0)); }
+    return x1 > x0 ? (x0 + x1) / 2 : null;
+  };
+  for (const b of btns) b.addEventListener('click', () => {
+    const d = Number(b.dataset.zoom);
+    const i = Math.max(0, PLAN_ZOOMS.indexOf(planUi.zoom));
+    const prev = planUi.zoom;
+    const next = d === 0 ? 1 : PLAN_ZOOMS[Math.max(0, Math.min(PLAN_ZOOMS.length - 1, i + d))];
+    if (next === prev) return;
+    const w = stage.getBoundingClientRect().width;
+    let cx = sc && w ? (sc.scrollLeft + sc.clientWidth / 2) / w : 0.5;
+    if (prev === 1) { const c = bboxCenterX(); if (c !== null) cx = c; }
+    planUi.zoom = next;
+    stage.style.setProperty('--zoom', String(next));
+    if (sc) sc.scrollLeft = next === 1 ? 0 : Math.max(0, cx * stage.getBoundingClientRect().width - sc.clientWidth / 2);
+    update();
+    if (b.disabled) { const o = btns.find((x) => !x.disabled); if (o) o.focus(); }
+  });
+  update();
 }
 
 async function planView(ctx) {
@@ -2999,15 +3097,20 @@ async function planView(ctx) {
   const staff = can(user, 'staff');
   ctx.setTitle(t('organize.fp.title'));
   ctx.el.innerHTML = loadingHtml();
-  let plans, spaces;
-  try { [plans, spaces] = await Promise.all([api.listFloorPlans(), api.listSpaces()]); } catch (err) { showError(ctx, err); return; }
+  let plans, spaces, locs;
+  try {
+    [plans, spaces, locs] = await Promise.all([api.listFloorPlans(), api.listSpaces(),
+      Promise.resolve(api.listLocations()).catch(() => [])]);
+  } catch (err) { showError(ctx, err); return; }
   plans = plans || [];
   spaces = spaces || [];
+  locs = locs || [];
   let hotspots = [];
   if (plans.length) {
     try { hotspots = (await api.listHotspots({ photoIds: plans.map((p) => p.photo_id) })) || []; } catch (err) { toast(errorText(err), 'error'); }
   }
-  const P = { plans, spaces, spaceById: new Map(spaces.map((s) => [s.id, s])), hotspots, staff, admin: can(user, 'admin') };
+  const P = { plans, spaces, spaceById: new Map(spaces.map((s) => [s.id, s])), locs, locById: new Map(locs.map((l) => [l.id, l])),
+    hotspots, staff, admin: can(user, 'admin') };
   let cur = plans.find((p) => p.id === qget(ctx, 'plan')) || plans[0] || null;
 
   ctx.el.innerHTML = `<div class="page org">
@@ -3052,9 +3155,19 @@ async function planView(ctx) {
 
 function renderPlanPanel(ctx, P, panel, plan) {
   const editing = P.staff && planUi.editing === plan.id;
-  const areas = P.hotspots.filter((h) => h.photo_id === plan.photo_id);
+  const areas = P.hotspots.filter((h) => h.photo_id === plan.photo_id).sort((a, b) => areaSize(b) - areaSize(a));
   const cmp = collator();
-  const sorted = [...areas].sort((a, b) => cmp(planAreaName(P, a), planAreaName(P, b)));
+  // Liste: nur Räume (Möbel sind über ihren Raum erreichbar); Zahl der Möbel je Raum
+  const itemsPerRoom = new Map();
+  const rooms = [];
+  for (const h of areas) {
+    const it = planItemLoc(P, h);
+    if (it) { if (it.root_id) itemsPerRoom.set(it.root_id, (itemsPerRoom.get(it.root_id) || 0) + 1); } else rooms.push(h);
+  }
+  const sorted = rooms.sort((a, b) => cmp(planAreaName(P, a), planAreaName(P, b)));
+  const ar = planAr(plan);
+  const altLbl = planAltLabelIds(P, areas);
+  const zi = Math.max(0, PLAN_ZOOMS.indexOf(planUi.zoom));
   const legend = `<div class="org-fp-legend small" aria-label="${esc(t('organize.fp.legend'))}">
       <span><i class="org-fp-sw linked" style="--c:${LINKED_COLOR}"></i>${esc(t('organize.fp.lgLinked'))}</span>
       <span><i class="org-fp-sw unlinked"></i>${esc(t('organize.fp.lgUnlinked'))}</span>
@@ -3066,8 +3179,9 @@ function renderPlanPanel(ctx, P, panel, plan) {
     const code = (sp && sp.code) || h.location_code;
     const sw = `<i class="org-fp-sw ${h.location_id ? 'linked' : 'unlinked'}"${h.location_id ? ` style="--c:${planAreaColor(P, h)}"` : ''} aria-hidden="true"></i>`;
     if (h.location_id && code) {
+      const nItems = itemsPerRoom.get(h.location_id) || 0;
       return `<li><a class="list-item" href="#/o/${enc(code)}">${sw}<div class="li-main"><span class="li-title">${esc(name)}</span>
-        <span class="li-sub">${esc([sp && (sp.code_path || sp.short_code), code].filter(Boolean).join(' · '))}</span></div>
+        <span class="li-sub">${esc([sp && (sp.code_path || sp.short_code), code, nItems ? t('organize.fp.items', { n: fmtNum(nItems) }) : ''].filter(Boolean).join(' · '))}</span></div>
         <div class="li-end">${sp ? orgStatusPill(sp.org_status) : ''}</div></a></li>`;
     }
     return `<li><div class="list-item">${sw}<div class="li-main"><span class="li-title">${esc(name)}</span>
@@ -3084,10 +3198,16 @@ function renderPlanPanel(ctx, P, panel, plan) {
     </div>` : ''}
     ${editing ? `<div class="alert warn" role="status">${icon('edit')}<span>${esc(t('organize.fp.editHint'))}</span></div>` : ''}
     ${plan.notes ? `<p class="small muted org-pre">${esc(plan.notes)}</p>` : ''}
-    <div class="org-plan-scroll">${planStageHtml(plan, areas.map((h) => planAreaHtml(P, h, editing)).join(''), editing ? ' editing' : '')}</div>
+    <div class="row org-fp-zoom" role="group" aria-label="${esc(t('organize.fp.zoom'))}">
+      <button type="button" class="btn sm icon-only" data-zoom="-1" aria-label="${esc(t('organize.fp.zoomOut'))}" title="${esc(t('organize.fp.zoomOut'))}"${zi === 0 ? ' disabled' : ''}>−</button>
+      <span class="small mono" data-zoomval aria-live="polite">${Math.round(PLAN_ZOOMS[zi] * 100)} %</span>
+      <button type="button" class="btn sm icon-only" data-zoom="1" aria-label="${esc(t('organize.fp.zoomIn'))}" title="${esc(t('organize.fp.zoomIn'))}"${zi === PLAN_ZOOMS.length - 1 ? ' disabled' : ''}>+</button>
+      <button type="button" class="btn sm" data-zoom="0"${zi === 0 ? ' disabled' : ''}>${esc(t('organize.fp.zoomFit'))}</button>
+    </div>
+    <div class="org-plan-scroll">${planStageHtml(plan, areas.map((h) => planAreaHtml(P, h, editing, ar, altLbl.has(h.id))).join(''), editing ? ' editing' : '')}</div>
     ${legend}
     <section class="section">
-      <h2>${esc(t('organize.fp.rooms'))} (${fmtNum(areas.length)})</h2>
+      <h2>${esc(t('organize.fp.rooms'))} (${fmtNum(sorted.length)})</h2>
       ${sorted.length ? `<ul class="list org-fp-rooms">${sorted.map(roomRow).join('')}</ul>`
         : `<p class="muted small">${esc(t(P.staff ? 'organize.fp.roomsNoneStaff' : 'organize.fp.roomsNone'))}</p>`}
     </section>
@@ -3096,6 +3216,7 @@ function renderPlanPanel(ctx, P, panel, plan) {
   const stage = panel.querySelector('[data-stage]');
   const layer = stage.querySelector('[data-layer]');
   bindStageImage(stage);
+  bindPlanZoom(panel, stage, areas);
   if (editing) {
     bindAreaEditor(stage, layer, {
       onDraw: (shape) => planAreaSheet(ctx, P, plan, { shape }),
@@ -3163,6 +3284,22 @@ async function createRoom(ctx, root, idp) {
 function spaceOptions(P, selected) {
   return P.spaces.map((s) => `<option value="${esc(s.id)}"${s.id === selected ? ' selected' : ''}>${esc(s.name)}${s.short_code ? ' · ' + esc(s.short_code) : ''}</option>`).join('');
 }
+/** Räume mit ihren Unterorten (Möbel, Tablare …) eingerückt – für Bereiche, die auch ein Möbel zeigen dürfen */
+function locationOptions(P, selected) {
+  const cmp = collator();
+  const byRoot = new Map();
+  for (const l of P.locs) {
+    if (!l.parent_id || !l.root_id) continue;
+    if (!byRoot.has(l.root_id)) byRoot.set(l.root_id, []);
+    byRoot.get(l.root_id).push(l);
+  }
+  const opt = (l, depth, label) => `<option value="${esc(l.id)}"${l.id === selected ? ' selected' : ''}>${' '.repeat(depth)}${esc(label)}</option>`;
+  return P.spaces.map((s) => {
+    const subs = (byRoot.get(s.id) || []).sort((a, b) => cmp(a.code_path || a.path || a.name, b.code_path || b.path || b.name));
+    return opt(s, 0, s.name + (s.short_code ? ' · ' + s.short_code : ''))
+      + subs.map((l) => opt(l, Math.max(1, num(l.depth)), l.name + (l.code_path || l.short_code ? ' · ' + (l.code_path || l.short_code) : ''))).join('');
+  }).join('');
+}
 
 /** Nur beschrifteter Raum → Raum anlegen (oberster Lagerort) oder mit bestehendem Raum verknüpfen */
 async function linkRoomSheet(ctx, P, h) {
@@ -3225,9 +3362,9 @@ async function planAreaSheet(ctx, P, plan, { shape, h }) {
       <span class="hint" id="pa-label-h">${esc(t('organize.fp.labelHint'))}</span></div>
     <div class="radio-cards" role="radiogroup">${modes.map((m) => `<label class="radio-card">
       <input type="radio" name="pmode" value="${m}"${m === curMode ? ' checked' : ''}${m === 'existing' && !P.spaces.length ? ' disabled' : ''}>
-      <span><b>${esc(t('organize.fp.mode.' + m))}</b></span></label>`).join('')}</div>
-    <div class="field" data-pm="existing"${curMode === 'existing' ? '' : ' hidden'}><label for="pa-space">${esc(t('organize.fp.space'))}</label>
-      <select id="pa-space">${spaceOptions(P, h && h.location_id)}</select></div>
+      <span><b>${esc(t(m === 'existing' ? 'organize.fp.mode.existingLoc' : 'organize.fp.mode.' + m))}</b></span></label>`).join('')}</div>
+    <div class="field" data-pm="existing"${curMode === 'existing' ? '' : ' hidden'}><label for="pa-space">${esc(t('organize.fp.locField'))}</label>
+      <select id="pa-space">${locationOptions(P, h && h.location_id)}</select></div>
     <div data-pm="new" hidden>${newRoomFieldsHtml(P, 'pn', h ? h.label || '' : '')}</div>`;
   const actions = [];
   if (!isNew) actions.push({ label: t('btn.delete'), kind: 'danger', icon: 'trash', value: 'delete' });

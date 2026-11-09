@@ -381,9 +381,12 @@ a.stat:hover, button.stat.org-stat-btn:hover { background: var(--surface-2); }
 /* Breite: höchstens so breit, dass der ganze Plan etwa in die Fensterhöhe passt (Hochformat), mind. 640 px;
    auf dem Handy breiter als der Bildschirm (horizontal scrollen), damit die Beschriftung lesbar bleibt. */
 .org-plan-stage {
-  --ar: 1.414; position: relative; margin: 0 auto; aspect-ratio: var(--ar); background: #fff; user-select: none; -webkit-user-select: none;
-  width: min(100%, max(640px, calc(88vh * var(--ar))));
+  --ar: 1.414; --zoom: 1; position: relative; margin: 0 auto; aspect-ratio: var(--ar); background: #fff; user-select: none; -webkit-user-select: none;
+  width: calc(var(--zoom) * min(100%, max(640px, calc(88vh * var(--ar)))));
 }
+.org-fp-zoom { gap: 6px; align-items: center; justify-content: flex-end; }
+.org-fp-zoom .icon-only { min-width: 40px; font-size: 18px; font-weight: 700; line-height: 1; }
+.org-fp-zoom [data-zoomval] { min-width: 4.5em; text-align: center; color: var(--muted); }
 @media (max-width: 899px) { .org-plan-stage { min-width: min(720px, calc(130vh * var(--ar))); } }
 .org-plan-stage.editing { min-width: 0; touch-action: none; cursor: crosshair; }
 .org-plan-stage.editing .org-layer { pointer-events: auto; }
@@ -399,6 +402,19 @@ a.stat:hover, button.stat.org-stat-btn:hover { background: var(--surface-2); }
 .org-fp.pt.linked::before { background: var(--c); }
 .org-fp.pt.unlinked::before { background: #fff; border: 3px dashed #8a877f; }
 span.org-fp { cursor: default; }
+/* Raum-Beschriftung über den Möbeln (Klicks gehen durch die Beschriftung hindurch) */
+.org-fp:not(.item) > .org-hs-label { z-index: 2; }
+.org-fp.rect.lbl-alt > .org-hs-label { left: auto; right: 2px; }
+/* Möbel: dünner Rahmen, Kurzcode in der Mitte; schmale hohe Möbel mit senkrechter Beschriftung */
+.org-fp.rect.item { border-width: 1.5px; border-radius: 3px; min-width: 10px; min-height: 10px; }
+.org-fp.rect.linked.item { background: color-mix(in srgb, var(--c) 24%, transparent); }
+.org-fp.rect.linked.item:hover, .org-fp.rect.linked.item:focus-visible { background: color-mix(in srgb, var(--c) 45%, transparent); }
+.org-fp.rect.item .org-hs-label {
+  left: 50%; top: 50%; transform: translate(-50%, -50%); max-width: none; overflow: visible; z-index: 1;
+  padding: 0 3px; border-radius: 3px; font-size: 10.5px; font-weight: 700; line-height: 1.35;
+  background: color-mix(in srgb, var(--c, #5b5953) 85%, #000);
+}
+.org-fp.rect.item.tall .org-hs-label { writing-mode: vertical-rl; transform: translate(-50%, -50%) rotate(180deg); padding: 3px 0; }
 .org-plan-stage.editing .org-fp.rect { border-style: dashed; }
 .org-fp-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; color: var(--muted); }
 .org-fp-legend span { display: inline-flex; align-items: center; gap: 6px; }
