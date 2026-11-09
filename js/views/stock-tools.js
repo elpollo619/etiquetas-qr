@@ -15,7 +15,7 @@ registerStrings({
     'stock.f.all': 'Alle', 'stock.f.refill': 'Nachfüllen', 'stock.f.uncounted': 'Noch nicht gezählt',
     'stock.min': 'Mindestens {qty}', 'stock.refill': 'Nachfüllen', 'stock.empty': 'Leer', 'stock.ok': 'Genug', 'stock.low': 'Knapp',
     'stock.onList': 'Auf der Einkaufsliste', 'stock.toList': 'Auf die Liste', 'stock.toListAria': '{name} auf die Einkaufsliste setzen',
-    'stock.listed': '«{name}» steht auf der Einkaufsliste.', 'stock.openList': 'Einkaufsliste',
+    'stock.listed': '«{name}» steht auf der Einkaufsliste.', 'stock.openList': 'Einkaufsliste', 'stock.allSites': 'Alle Adressen', 'stock.siteLabel': 'Adresse',
     'stock.uncounted': 'Noch nicht gezählt',
     'stock.take': '−1', 'stock.takeAria': '1 {unit} {name} entnehmen', 'stock.add': 'Zugang', 'stock.addAria': 'Zugang für {name} erfassen',
     'stock.taken': '{name}: 1 entnommen – noch {qty}', 'stock.added': '{name}: {qty} dazu – jetzt {now}',
@@ -48,7 +48,7 @@ registerStrings({
     'stock.f.all': 'Todos', 'stock.f.refill': 'Repor', 'stock.f.uncounted': 'Ainda não contado',
     'stock.min': 'Mínimo {qty}', 'stock.refill': 'Repor', 'stock.empty': 'Vazio', 'stock.ok': 'Suficiente', 'stock.low': 'Pouco',
     'stock.onList': 'Na lista de compras', 'stock.toList': 'Para a lista', 'stock.toListAria': 'Pôr {name} na lista de compras',
-    'stock.listed': '«{name}» está na lista de compras.', 'stock.openList': 'Lista de compras',
+    'stock.listed': '«{name}» está na lista de compras.', 'stock.openList': 'Lista de compras', 'stock.allSites': 'Todos os endereços', 'stock.siteLabel': 'Endereço',
     'stock.uncounted': 'Ainda não contado',
     'stock.take': '−1', 'stock.takeAria': 'Retirar 1 {unit} de {name}', 'stock.add': 'Entrada', 'stock.addAria': 'Registar entrada de {name}',
     'stock.taken': '{name}: 1 retirado – restam {qty}', 'stock.added': '{name}: +{qty} – agora {now}',
@@ -81,7 +81,7 @@ registerStrings({
     'stock.f.all': 'Todos', 'stock.f.refill': 'Reponer', 'stock.f.uncounted': 'Sin contar',
     'stock.min': 'Mínimo {qty}', 'stock.refill': 'Reponer', 'stock.empty': 'Vacío', 'stock.ok': 'Suficiente', 'stock.low': 'Poco',
     'stock.onList': 'En la lista de compras', 'stock.toList': 'A la lista', 'stock.toListAria': 'Poner {name} en la lista de compras',
-    'stock.listed': '«{name}» está en la lista de compras.', 'stock.openList': 'Lista de compras',
+    'stock.listed': '«{name}» está en la lista de compras.', 'stock.openList': 'Lista de compras', 'stock.allSites': 'Todas las direcciones', 'stock.siteLabel': 'Dirección',
     'stock.uncounted': 'Sin contar',
     'stock.take': '−1', 'stock.takeAria': 'Coger 1 {unit} de {name}', 'stock.add': 'Entrada', 'stock.addAria': 'Registrar entrada de {name}',
     'stock.taken': '{name}: 1 cogido – quedan {qty}', 'stock.added': '{name}: +{qty} – ahora {now}',
@@ -131,21 +131,29 @@ function stockState(a) {
 }
 const STATE_PILL = { ok: 'pill-ok', low: 'pill-info', refill: 'pill-warn', empty: 'pill-danger', uncounted: 'pill-muted' };
 const STATE_LABEL = { ok: 'stock.ok', low: 'stock.low', refill: 'stock.refill', empty: 'stock.empty', uncounted: 'stock.uncounted' };
-const uiStock = { q: '', filter: 'all' };
+const uiStock = { q: '', filter: 'all', site: 'all' };
 
 async function stockView(ctx) {
   const { api } = ctx;
   ctx.setTitle(t('stock.title'));
   ctx.el.innerHTML = loadingHtml();
-  let arts, shop, cons;
+  let arts, shop, cons, locs, sites;
   try {
-    [arts, shop, cons] = await Promise.all([api.listArticles({}),
-      api.listShopping({ status: 'open' }).catch(() => []), api.listConsumption().catch(() => [])]);
+    [arts, shop, cons, locs, sites] = await Promise.all([api.listArticles({}),
+      api.listShopping({ status: 'open' }).catch(() => []), api.listConsumption().catch(() => []),
+      api.listLocations({}).catch(() => []), api.listSites().catch(() => [])]);
   } catch (err) { showError(ctx, err); return; }
+  // Adresse je Lagerort (Raum → Adresse), damit Büro und Hotel getrennt gezeigt werden können
+  const siteOfLoc = new Map((locs || []).map((l) => [l.id, l.space_site_id || null]));
+  const siteOf = (a) => (a.location_id ? siteOfLoc.get(a.location_id) || null : null);
   const listed = new Set((shop || []).filter((x) => x.article_id).map((x) => x.article_id));
   const consMap = consumptionMap(cons);
   let rows = (arts || []).filter((a) => !a.archived && a.min_stock !== null && a.min_stock !== undefined && a.min_stock !== '');
-  const groupOf = (a) => clean(String(a.category_path || a.category || '').split('›')[0]) || t('stock.group.other');
+  // Gruppe = die ersten zwei Ebenen der Kategorie (z. B. «Bürobedarf › Papier», «Hotel › Hygiene»)
+  const groupOf = (a) => String(a.category_path || a.category || '').split('›').map(clean).filter(Boolean).slice(0, 2).join(' › ')
+    || t('stock.group.other');
+  const usedSites = (sites || []).filter((st) => rows.some((a) => siteOf(a) === st.id));
+  if (uiStock.site !== 'all' && !usedSites.some((st) => st.id === uiStock.site)) uiStock.site = 'all';
 
   ctx.el.innerHTML = `<div class="page stock">
     <div class="page-head">
@@ -158,6 +166,9 @@ async function stockView(ctx) {
       <div class="chips" role="group" aria-label="${esc(t('stock.title'))}">
         ${['all', 'refill', 'uncounted'].map((f) => `<button type="button" class="chip" data-f="${f}" aria-pressed="${uiStock.filter === f}">${esc(t('stock.f.' + f))}</button>`).join('')}
       </div>
+      ${usedSites.length > 1 ? `<div class="chips" role="group" aria-label="${esc(t('stock.siteLabel'))}">
+        ${[{ id: 'all', name: t('stock.allSites') }, ...usedSites].map((st) => `<button type="button" class="chip" data-site="${esc(st.id)}" aria-pressed="${uiStock.site === st.id}">${icon('location')}${esc(st.name)}</button>`).join('')}
+      </div>` : ''}
       <div class="small muted" data-sum aria-live="polite"></div>
     </div>
     <div data-list></div>
@@ -168,7 +179,8 @@ async function stockView(ctx) {
 
   const render = () => {
     const words = norm(uiStock.q).split(' ').filter(Boolean);
-    const shown = rows.filter((a) => {
+    const inSite = rows.filter((a) => uiStock.site === 'all' || siteOf(a) === uiStock.site);
+    const shown = inSite.filter((a) => {
       const st = stockState(a);
       if (uiStock.filter === 'refill' && !(st === 'refill' || st === 'empty')) return false;
       if (uiStock.filter === 'uncounted' && st !== 'uncounted') return false;
@@ -176,10 +188,10 @@ async function stockView(ctx) {
       const h = norm([a.name, a.code, a.location_path, a.category_path, a.brand].join(' '));
       return words.every((w) => h.includes(w));
     });
-    const refill = rows.filter((a) => ['refill', 'empty'].includes(stockState(a))).length;
-    const unc = rows.filter((a) => stockState(a) === 'uncounted').length;
-    sumEl.textContent = t('stock.summary', { n: fmtNum(rows.length), refill: fmtNum(refill), unc: fmtNum(unc),
-      listed: fmtNum(rows.filter((a) => listed.has(a.id)).length) });
+    const refill = inSite.filter((a) => ['refill', 'empty'].includes(stockState(a))).length;
+    const unc = inSite.filter((a) => stockState(a) === 'uncounted').length;
+    sumEl.textContent = t('stock.summary', { n: fmtNum(inSite.length), refill: fmtNum(refill), unc: fmtNum(unc),
+      listed: fmtNum(inSite.filter((a) => listed.has(a.id)).length) });
     if (!rows.length) { listEl.innerHTML = emptyHtml(t('stock.none')); return; }
     if (!shown.length) { listEl.innerHTML = emptyHtml(t('stock.noneFound')); return; }
     const groups = new Map();
@@ -288,6 +300,11 @@ async function stockView(ctx) {
     }
   });
   root.querySelector('[data-q]').addEventListener('input', debounce((e) => { uiStock.q = e.target.value; render(); }, 150));
+  root.querySelectorAll('[data-site]').forEach((b) => b.addEventListener('click', () => {
+    uiStock.site = b.dataset.site;
+    root.querySelectorAll('[data-site]').forEach((x) => x.setAttribute('aria-pressed', String(x.dataset.site === uiStock.site)));
+    render();
+  }));
   root.querySelectorAll('[data-f]').forEach((b) => b.addEventListener('click', () => {
     uiStock.filter = b.dataset.f;
     root.querySelectorAll('[data-f]').forEach((x) => x.setAttribute('aria-pressed', String(x.dataset.f === uiStock.filter)));
