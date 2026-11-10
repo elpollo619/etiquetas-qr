@@ -333,41 +333,46 @@ function placeBlocks(res, x, y, w, gap, out) {
   });
 }
 function scanText(item) { return item.kind === 'machine' ? t('labels.scanMachine') : t('labels.scan'); }
-function layoutH(item, W, H, qr, out) {
+// Druckbarer Bereich der Brother QL-800: am Anfang/Ende des Etiketts (Laufrichtung) ca. 3 mm, an den Rändern
+// des Bandes ca. 1,5 mm nicht bedruckbar (Brother-Angaben, z. B. DK-11201: 29 × 90 mm, bedruckbar 25,9 × 83,9 mm).
+// Inhalt nie in diesen Rand legen, sonst fehlt links der erste Buchstabe.
+const SAFE_ALONG = 3.5, SAFE_ACROSS = 1.8;
+function layoutH(item, W, H, qr, out, pad = { x: 0, y: 0 }) {
   const compact = H < 38;
-  const m = H < 16 ? 1 : compact ? 2 : 3;
+  const m0 = H < 16 ? 1 : compact ? 2 : 3;
+  const mx = Math.max(m0, pad.x), my = Math.max(m0, pad.y);
   const colGap = compact ? 1.5 : 3;
   const capS = clamp(H * 0.045, 2.1, 2.9);
   const showCap = !compact && H >= 50 && !!qr;
   const capH = showCap ? capS * 1.8 : 0;
-  const qrBox = Math.min(H - 2 * m - capH, W * (compact ? 0.46 : 0.42));
-  const qx = W - m - qrBox;
-  const qy = m + (H - 2 * m - capH - qrBox) / 2;
+  const qrBox = Math.min(H - 2 * my - capH, W * (compact ? 0.46 : 0.42));
+  const qx = W - mx - qrBox;
+  const qy = my + (H - 2 * my - capH - qrBox) / 2;
   const info = placeQr(qr, qx, qy, qrBox, out);
   if (showCap) {
     const cap = scanText(item);
     const cs = Math.min(capS, capS * (qrBox + colGap) / textW(cap, capS));
     out.push({ t: 'text', x: qx + qrBox / 2, y: qy + qrBox + capH * 0.72, size: cs, anchor: 'middle', spans: [{ s: cap, w: 400 }] });
   }
-  const tw = qx - colGap - m;
+  const tw = qx - colGap - mx;
   const base = clamp(H * 0.15, 3, 7.2);
-  const fit = fitBlocks(buildBlocks(item, base, !compact), tw, H - 2 * m, base * 0.22);
-  const ty = compact ? m + Math.max(0, (H - 2 * m - fit.h) / 2) : m;
-  placeBlocks(fit.res, m, ty, tw, fit.gap, out);
+  const fit = fitBlocks(buildBlocks(item, base, !compact), tw, H - 2 * my, base * 0.22);
+  const ty = compact ? my + Math.max(0, (H - 2 * my - fit.h) / 2) : my;
+  placeBlocks(fit.res, mx, ty, tw, fit.gap, out);
   return info;
 }
-function layoutV(item, W, H, qr, out) {
-  const m = 3, tw = W - 2 * m;
+function layoutV(item, W, H, qr, out, pad = { x: 0, y: 0 }) {
+  const mx = Math.max(3, pad.x), my = Math.max(3, pad.y), tw = W - 2 * mx;
   const base = clamp(W * 0.105, 3, 7.5), gap = base * 0.22;
   const capS = clamp(W * 0.045, 2.1, 2.9), capH = qr ? capS * 1.8 : 0;
   const minQr = Math.min(tw, H * 0.36);
-  const fit = fitBlocks(buildBlocks(item, base, true), tw, H - 2 * m - minQr - capH - gap * 3, gap);
+  const fit = fitBlocks(buildBlocks(item, base, true), tw, H - 2 * my - minQr - capH - gap * 3, gap);
   const isHead = (b) => b.k === 'cat' || b.k === 'title' || b.k === 'size';
   const head = fit.res.filter(isHead), tail = fit.res.filter((b) => !isHead(b));
   const headH = stackH(head, fit.gap), tailH = stackH(tail, fit.gap);
-  placeBlocks(head, m, m, tw, fit.gap, out);
-  const top = m + headH + gap * 1.5;
-  const bottom = H - m - tailH - (tail.length ? gap * 1.5 : 0);
+  placeBlocks(head, mx, my, tw, fit.gap, out);
+  const top = my + headH + gap * 1.5;
+  const bottom = H - my - tailH - (tail.length ? gap * 1.5 : 0);
   const qrBox = Math.max(6, Math.min(tw, bottom - top - capH));
   const qx = (W - qrBox) / 2, qy = top + (bottom - top - capH - qrBox) / 2;
   const info = placeQr(qr, qx, qy, qrBox, out);
@@ -376,14 +381,16 @@ function layoutV(item, W, H, qr, out) {
     const cs = Math.min(capS, capS * tw / textW(cap, capS));
     out.push({ t: 'text', x: W / 2, y: qy + qrBox + capH * 0.72, size: cs, anchor: 'middle', spans: [{ s: cap, w: 400 }] });
   }
-  if (tail.length) placeBlocks(tail, m, H - m - tailH, tw, fit.gap, out);
+  if (tail.length) placeBlocks(tail, mx, H - my - tailH, tw, fit.gap, out);
   return info;
 }
 function buildLabel(item, s) {
   const d = designDims(s);
   const qr = makeQR(d.f.shortQr ? item.code : (item.qrText || qrUrl(item.code)));
   const list = [];
-  const qrInfo = (d.W >= d.H * 1.15 ? layoutH : layoutV)(item, d.W, d.H, qr, list);
+  // Laufrichtung des Bandes: quer liegender Inhalt (rot) → links/rechts; sonst oben/unten
+  const pad = d.rot ? { x: SAFE_ALONG, y: SAFE_ACROSS } : { x: SAFE_ACROSS, y: SAFE_ALONG };
+  const qrInfo = (d.W >= d.H * 1.15 ? layoutH : layoutV)(item, d.W, d.H, qr, list, pad);
   return { list, W: d.W, H: d.H, qrInfo };
 }
 
