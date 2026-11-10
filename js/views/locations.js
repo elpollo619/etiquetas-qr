@@ -26,6 +26,9 @@ registerStrings({
     'locations.expandAll': 'Alle aufklappen',
     'locations.collapseAll': 'Alle zuklappen',
     'locations.toggle': 'Unterorte von «{name}» ein- oder ausblenden',
+    'locations.siteRooms1': '1 Raum', 'locations.siteRoomsN': '{n} Räume', 'locations.siteEmpty': 'Noch keine Räume',
+    'locations.siteNone': 'Ohne Standort', 'locations.addRoomIn': 'Raum in «{name}» hinzufügen',
+    'locations.siteToggle': 'Räume von «{name}» ein- oder ausblenden',
     'locations.count1': '1 Lagerort',
     'locations.countN': '{n} Lagerorte',
     'locations.articles1': '1 Artikel',
@@ -105,6 +108,9 @@ registerStrings({
     'locations.expandAll': 'Expandir tudo',
     'locations.collapseAll': 'Recolher tudo',
     'locations.toggle': 'Mostrar ou ocultar as sublocalizações de «{name}»',
+    'locations.siteRooms1': '1 sala', 'locations.siteRoomsN': '{n} salas', 'locations.siteEmpty': 'Ainda sem salas',
+    'locations.siteNone': 'Sem local', 'locations.addRoomIn': 'Adicionar sala em «{name}»',
+    'locations.siteToggle': 'Mostrar ou ocultar as salas de «{name}»',
     'locations.count1': '1 localização',
     'locations.countN': '{n} localizações',
     'locations.articles1': '1 artigo',
@@ -184,6 +190,9 @@ registerStrings({
     'locations.expandAll': 'Desplegar todo',
     'locations.collapseAll': 'Plegar todo',
     'locations.toggle': 'Mostrar u ocultar las sububicaciones de «{name}»',
+    'locations.siteRooms1': '1 sala', 'locations.siteRoomsN': '{n} salas', 'locations.siteEmpty': 'Todavía sin salas',
+    'locations.siteNone': 'Sin ubicación', 'locations.addRoomIn': 'Añadir sala en «{name}»',
+    'locations.siteToggle': 'Mostrar u ocultar las salas de «{name}»',
     'locations.count1': '1 ubicación',
     'locations.countN': '{n} ubicaciones',
     'locations.articles1': '1 artículo',
@@ -435,19 +444,27 @@ async function listView(ctx) {
   const staff = can(user, 'staff');
   ctx.setTitle(t('locations.title'));
   ctx.el.innerHTML = loadingHtml();
-  let locs, arts, machs;
+  let locs, arts, machs, sites;
   try {
-    [locs, arts, machs] = await Promise.all([
+    [locs, arts, machs, sites] = await Promise.all([
       api.listLocations({ includeArchived: staff }),
       api.listArticles({}).catch(() => null),      // Zähler sind nicht kritisch
       api.listMachines({}).catch(() => null),
+      safeList(() => (typeof api.listSites === 'function' ? api.listSites() : [])),
     ]);
   } catch (err) { showError(ctx, err); return; }
   locs = locs || [];
+  // Standorte (Adressen, z. B. B4 · Blümlisalpstrasse 4) als oberste Ebene der Liste; nicht Teil des Codes
+  sites = sites || [];
+  const siteById = new Map(sites.map((x) => [x.id, x]));
+  const siteOf = (l) => (l.site_id && siteById.has(l.site_id) ? l.site_id : (l.space_site_id && siteById.has(l.space_site_id) ? l.space_site_id : 'none'));
   const directA = countBy(arts, 'location_id');
   const directM = countBy(machs, 'home_location_id');
-  const hay = new Map(locs.map((l) => [l.id, norm([l.name, l.code, l.path, l.short_code, l.code_path, l.responsible_name,
-    locTypeLabel(l.type)].join(' '))]));
+  const hay = new Map(locs.map((l) => {
+    const st = siteById.get(siteOf(l));
+    return [l.id, norm([l.name, l.code, l.path, l.short_code, l.code_path, l.responsible_name,
+      locTypeLabel(l.type), st ? st.name : '', st ? st.address : ''].join(' '))];
+  }));
 
   ctx.el.innerHTML = `<div class="page">
     <div class="page-head">
@@ -493,6 +510,26 @@ async function listView(ctx) {
     </div>`;
   };
 
+  const siteRowHtml = (st, nRooms, expanded) => {
+    const key = 'site:' + (st ? st.id : 'none');
+    const name = st ? st.name : t('locations.siteNone');
+    const toggle = nRooms
+      ? `<button type="button" class="icon-btn" data-toggle="${esc(key)}" aria-expanded="${expanded}"
+          aria-label="${esc(t('locations.siteToggle', { name }))}">
+          <span style="display:inline-flex;transition:transform .15s;transform:rotate(${expanded ? 90 : 0}deg)">${icon('chevron')}</span></button>`
+      : '<span style="width:40px;flex:none" aria-hidden="true"></span>';
+    const main = `<span class="li-title"><span class="muted" aria-hidden="true" style="display:inline-flex;vertical-align:-4px;margin-right:6px">${icon('pin')}</span><b class="mono">${esc(name)}</b></span>
+        ${st && st.address ? `<span class="li-sub">${esc(st.address)}</span>` : ''}`;
+    return `<div class="list-item loc-site" style="padding-left:6px;gap:8px">
+      ${toggle}
+      ${st ? `<a class="li-main" href="#/organisieren?site=${enc(st.id)}" style="text-decoration:none;align-self:stretch;justify-content:center">${main}</a>`
+        : `<div class="li-main" style="align-self:stretch;justify-content:center">${main}</div>`}
+      <div class="li-end"><span class="muted">${esc(nRooms ? plural('locations.siteRooms', nRooms) : t('locations.siteEmpty'))}</span></div>
+      ${staff && st ? `<a class="icon-btn" href="#/lagerorte/neu?site=${enc(st.id)}" title="${esc(t('locations.addRoomIn', { name }))}"
+        aria-label="${esc(t('locations.addRoomIn', { name }))}">${icon('plus')}</a>` : ''}
+    </div>`;
+  };
+
   const render = (focusToggleId) => {
     const shown = locs.filter((l) => !l.archived || (staff && treeState.archived));
     const tree = buildTree(shown);
@@ -525,10 +562,22 @@ async function listView(ctx) {
       out.push(rowHtml(node, depth, children.length, expanded, !!visible));
       if (expanded) children.forEach((c) => walk(c, depth + 1));
     };
-    tree.roots.forEach((r) => walk(r, 0));
+    if (!sites.length) tree.roots.forEach((r) => walk(r, 0));
+    else {
+      // Räume unter ihrem Standort; Standorte ohne Räume bleiben sichtbar (ausser bei der Suche)
+      for (const g of [...sites.map((x) => x.id), 'none']) {
+        const st = siteById.get(g) || null;
+        const rooms = tree.roots.filter((r) => siteOf(r) === g);
+        const shownRooms = rooms.filter((r) => !visible || visible.has(r.id));
+        if (visible ? !shownRooms.length : (!st && !rooms.length)) continue;
+        const expanded = visible ? true : !collapsed.has('site:' + g);
+        out.push(siteRowHtml(st, rooms.length, expanded));
+        if (expanded) shownRooms.forEach((r) => walk(r, 1));
+      }
+    }
 
     countEl.textContent = plural('locations.count', visible ? matches : shown.length);
-    toolsEl.hidden = !!visible || !tree.kids.size;
+    toolsEl.hidden = !!visible || (!tree.kids.size && !sites.length);
     if (!out.length) {
       treeEl.innerHTML = emptyHtml(shown.length ? t('locations.noMatch') : t('locations.emptyTree'),
         staff && !shown.length ? `<a class="btn primary" href="#/lagerorte/neu">${icon('plus')}${esc(t('locations.new'))}</a>` : '');
@@ -560,6 +609,8 @@ async function listView(ctx) {
   root.querySelector('[data-collapse]').addEventListener('click', () => {
     const set = collapsedSet();
     for (const l of locs) if (l.parent_id) set.add(l.parent_id);
+    for (const x of sites) set.add('site:' + x.id);
+    set.add('site:none');
     saveCollapsed();
     render();
   });

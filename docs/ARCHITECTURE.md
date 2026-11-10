@@ -288,6 +288,8 @@ api.saveFloorPlan({ …, site_id })
 ```
 UI: «Lager organisieren» filtert/gruppiert die Räume nach Adresse (?site=<id>|none); Gebäudeplan wählt zuerst die Adresse,
 dann das Stockwerk; Lagerort-Formular und «Raum hinzufügen» haben das Feld «Adresse».
+Die Liste «Lagerorte» zeigt die Adressen als oberste Ebene (aufklappbar, «+» legt einen Raum dort an); Adressen ohne
+Räume bleiben sichtbar. Namen sind Kurzzeichen (B4, H8, A14), die Beschreibung steht in `address`.
 
 ## Verbrauchsmaterial, Einräumen, Einkaufsliste (November 2026)
 - **Verbrauchsmaterial** (`#/verbrauch`, js/views/stock-tools.js): alle Artikel mit Mindestbestand; «−1» (Entnahme) und «Zugang» für
