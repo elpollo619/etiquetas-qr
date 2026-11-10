@@ -585,6 +585,30 @@ create index if not exists shopping_items_status_idx on public.shopping_items (s
 -- Inventur für einen bestimmten Raum/Lagerort (optional)
 alter table public.inventories add column if not exists location_id uuid references public.locations(id) on delete set null;
 
+-- Akkus gehören zur Maschine (keine eigenen Einträge): wie viele Akkus zum Gerät gehören und welcher Typ.
+-- battery_count null = Gerät ohne Akkus oder noch nicht gezählt (dann sagt battery_type, dass es Akkus braucht).
+-- Beim Ausleihen wird gefragt, wie viele Akkus mitgehen (loans.batteries_out), beim Zurückgeben, wie viele zurückkommen.
+alter table public.machines add column if not exists battery_count  int;
+alter table public.machines add column if not exists battery_type   text;
+alter table public.loans    add column if not exists batteries_out  int;
+alter table public.loans    add column if not exists batteries_back int;
+do $$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'machines_battery_count_chk') then
+    alter table public.machines add constraint machines_battery_count_chk
+      check (battery_count is null or battery_count between 0 and 50);
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'machines_battery_type_chk') then
+    alter table public.machines add constraint machines_battery_type_chk
+      check (battery_type is null or length(trim(battery_type)) between 1 and 120);
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'loans_batteries_chk') then
+    alter table public.loans add constraint loans_batteries_chk
+      check ((batteries_out is null or batteries_out between 0 and 50)
+         and (batteries_back is null or batteries_back between 0 and 50));
+  end if;
+end $$;
+
 -- Startkategorien (de-CH) – nur wenn noch keine Kategorien existieren; danach frei änderbar
 do $$
 declare
@@ -969,14 +993,19 @@ create trigger locations_site_top_only before insert or update on public.locatio
 --  Geschäftslogik (nur über diese Funktionen; sicher gegen gleichzeitige Zugriffe)
 -- =====================================================================
 
--- Maschine ausleihen
+-- Akkus: neuer Parameter p_batteries → alte Signaturen entfernen (sonst gäbe es zwei Überladungen)
+drop function if exists public.machine_checkout(uuid, uuid, timestamptz, text, uuid);
+drop function if exists public.machine_return(uuid, uuid, text, text);
+
+-- Maschine ausleihen (p_batteries: wie viele Akkus mitgehen; null = nicht gefragt)
 create or replace function public.machine_checkout(
   p_machine uuid, p_request uuid default null, p_due timestamptz default null,
-  p_note text default null, p_borrower uuid default null)
+  p_note text default null, p_borrower uuid default null, p_batteries int default null)
 returns public.loans language plpgsql security definer set search_path = public as $$
 declare v_m public.machines; v_l public.loans; v_uid uuid := auth.uid(); v_borrower uuid;
 begin
   if not public.is_active_user() then raise exception 'LGR:not_authorized'; end if;
+  if p_batteries is not null and (p_batteries < 0 or p_batteries > 50) then raise exception 'LGR:invalid_batteries'; end if;
   v_borrower := coalesce(p_borrower, v_uid);
   if v_borrower <> v_uid then
     if not public.is_staff() then raise exception 'LGR:not_authorized'; end if;
@@ -995,8 +1024,8 @@ begin
   if v_m.status not in ('verfuegbar','reserviert') then raise exception 'LGR:not_available:%', v_m.status; end if;
   if p_due is not null and p_due < now() - interval '5 minutes' then raise exception 'LGR:due_in_past'; end if;
   begin
-    insert into public.loans (machine_id, borrower_id, due_at, checkout_note, checkout_request, created_by)
-    values (p_machine, v_borrower, p_due, nullif(trim(p_note), ''), p_request, v_uid)
+    insert into public.loans (machine_id, borrower_id, due_at, checkout_note, checkout_request, created_by, batteries_out)
+    values (p_machine, v_borrower, p_due, nullif(trim(p_note), ''), p_request, v_uid, p_batteries)
     returning * into v_l;
   exception when unique_violation then
     raise exception 'LGR:not_available:ausgeliehen';
@@ -1006,13 +1035,15 @@ begin
   perform set_config('lgr.skip_audit', '', true);   -- nur für diese Änderung, nicht für den Rest der Transaktion
   insert into public.audit_log (user_id, action, entity, entity_id, details)
   values (v_uid, 'ausleihen', 'machines', p_machine,
-          jsonb_build_object('loan', v_l.id, 'borrower', v_borrower, 'due', p_due));
+          jsonb_build_object('loan', v_l.id, 'borrower', v_borrower, 'due', p_due, 'akkus', p_batteries));
   return v_l;
 end $$;
 
--- Maschine zurückgeben (auch für andere: Ausleiher UND Rückgeber werden gespeichert)
+-- Maschine zurückgeben (auch für andere: Ausleiher UND Rückgeber werden gespeichert).
+-- p_batteries: wie viele Akkus zurückkommen; fehlen welche, ist eine Notiz Pflicht (wo sind sie?).
 create or replace function public.machine_return(
-  p_machine uuid, p_request uuid default null, p_condition text default 'ok', p_note text default null)
+  p_machine uuid, p_request uuid default null, p_condition text default 'ok', p_note text default null,
+  p_batteries int default null)
 returns public.loans language plpgsql security definer set search_path = public as $$
 declare
   v_m public.machines; v_l public.loans; v_uid uuid := auth.uid();
@@ -1021,6 +1052,7 @@ begin
   if not public.is_active_user() then raise exception 'LGR:not_authorized'; end if;
   if v_cond not in ('ok','maengel','defekt') then raise exception 'LGR:invalid_condition'; end if;
   if v_cond <> 'ok' and v_note is null then raise exception 'LGR:note_required'; end if;
+  if p_batteries is not null and (p_batteries < 0 or p_batteries > 50) then raise exception 'LGR:invalid_batteries'; end if;
   select * into v_m from public.machines where id = p_machine for update;
   if not found then raise exception 'LGR:not_found'; end if;
   if p_request is not null then
@@ -1029,10 +1061,13 @@ begin
   end if;
   select * into v_l from public.loans where machine_id = p_machine and returned_at is null for update;
   if not found then raise exception 'LGR:not_on_loan'; end if;
+  if p_batteries is not null and v_l.batteries_out is not null and p_batteries < v_l.batteries_out and v_note is null then
+    raise exception 'LGR:batteries_note_required';
+  end if;
   update public.loans
      set returned_at = greatest(now(), checked_out_at),   -- Prüfregel loans_dates_chk nie verletzen
          returned_by = v_uid, return_condition = v_cond,
-         return_note = v_note, return_request = p_request
+         return_note = v_note, return_request = p_request, batteries_back = p_batteries
    where id = v_l.id
   returning * into v_l;
   perform set_config('lgr.skip_audit', 'on', true);
@@ -1045,7 +1080,8 @@ begin
   insert into public.audit_log (user_id, action, entity, entity_id, details)
   values (v_uid, 'zurueckgeben', 'machines', p_machine,
           jsonb_build_object('loan', v_l.id, 'borrower', v_l.borrower_id, 'condition', v_cond,
-                             'note', v_note, 'stellvertretend', v_l.borrower_id <> v_uid));
+                             'note', v_note, 'stellvertretend', v_l.borrower_id <> v_uid,
+                             'akkus_mit', v_l.batteries_out, 'akkus_zurueck', p_batteries));
   return v_l;
 end $$;
 
@@ -1804,7 +1840,12 @@ select m.*,
        ll.returned_at               as last_returned_at,
        lr.full_name                 as last_returned_by_name,
        ll.return_condition          as last_return_condition,
+       al.batteries_out             as open_batteries_out,
+       ll.batteries_out             as last_batteries_out,
+       ll.batteries_back            as last_batteries_back,
        coalesce(ph.path, dp.path)   as photo_path,
+       case when ph.path is null then dp.pos_x end as photo_pos_x,   -- Punkt des Objekts im Originalfoto (Vorschau)
+       case when ph.path is null then dp.pos_y end as photo_pos_y,
        (select count(*) from public.set_components sc where sc.set_id = m.id) as component_count
   from public.machines m
   left join public.location_paths lp on lp.id = m.home_location_id
@@ -1820,7 +1861,7 @@ select m.*,
   left join lateral (select x.path from public.attachments x
                       where x.entity = 'machine' and x.entity_id = m.id and x.kind = 'photo'
                       order by x.is_primary desc, x.created_at limit 1) ph on true
-  left join lateral (select p.path from public.detections d join public.photos p on p.id = d.photo_id
+  left join lateral (select p.path, d.pos_x, d.pos_y from public.detections d join public.photos p on p.id = d.photo_id
                       where d.machine_id = m.id
                       order by (d.status = 'bestaetigt') desc, d.created_at limit 1) dp on true;
 
@@ -1830,14 +1871,16 @@ select a.*,
        lp.code_path as location_code_path,
        cp.path as category_path,
        (a.min_stock is not null and a.stock <= a.min_stock) as low_stock,
-       coalesce(ph.path, dp.path) as photo_path
+       coalesce(ph.path, dp.path) as photo_path,
+       case when ph.path is null then dp.pos_x end as photo_pos_x,   -- Punkt des Objekts im Originalfoto (Vorschau)
+       case when ph.path is null then dp.pos_y end as photo_pos_y
   from public.articles a
   left join public.location_paths lp on lp.id = a.location_id
   left join public.category_paths cp on cp.id = a.category_id
   left join lateral (select x.path from public.attachments x
                       where x.entity = 'article' and x.entity_id = a.id and x.kind = 'photo'
                       order by x.is_primary desc, x.created_at limit 1) ph on true
-  left join lateral (select p.path from public.detections d join public.photos p on p.id = d.photo_id
+  left join lateral (select p.path, d.pos_x, d.pos_y from public.detections d join public.photos p on p.id = d.photo_id
                       where d.article_id = a.id
                       order by (d.status = 'bestaetigt') desc, d.created_at limit 1) dp on true;
 
@@ -2157,6 +2200,7 @@ grant update (short_code, responsible_id, cover_photo_id) on public.locations to
 grant update (site_id) on public.locations to authenticated;
 grant update (category_id, product_url) on public.articles to authenticated;
 grant update (category_id, responsible_id, is_set, product_url) on public.machines to authenticated;
+grant update (battery_count, battery_type) on public.machines to authenticated;
 grant insert (location_id) on public.inventories to authenticated;
 grant insert (parent_id, name, sort, archived) on public.categories to authenticated;
 grant update (parent_id, name, sort, archived) on public.categories to authenticated;

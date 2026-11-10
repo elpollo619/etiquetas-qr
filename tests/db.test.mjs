@@ -149,8 +149,8 @@ test('schema: läuft zweimal ohne Fehler, ohne storage-Schema; Trigger/Policies 
 
 test('vertrag: Funktionssignaturen und Rückgabetypen unverändert', async () => {
   const expected = {
-    machine_checkout: ['p_machine uuid, p_request uuid, p_due timestamp with time zone, p_note text, p_borrower uuid', 'loans'],
-    machine_return: ['p_machine uuid, p_request uuid, p_condition text, p_note text', 'loans'],
+    machine_checkout: ['p_machine uuid, p_request uuid, p_due timestamp with time zone, p_note text, p_borrower uuid, p_batteries integer', 'loans'],
+    machine_return: ['p_machine uuid, p_request uuid, p_condition text, p_note text, p_batteries integer', 'loans'],
     machine_set_status: ['p_machine uuid, p_status text, p_note text', 'machines'],
     admin_correct_loan: ['p_loan uuid, p_checked_out_at timestamp with time zone, p_due_at timestamp with time zone, p_returned_at timestamp with time zone, p_reason text', 'loans'],
     stock_move: ['p_article uuid, p_type text, p_qty numeric, p_request uuid, p_note text, p_to_location uuid', 'stock_movements'],
@@ -919,4 +919,40 @@ test('einladungen: eingeladene E-Mail ist nach Bestätigung sofort aktiv mit ihr
   // nicht eingeladene Person bleibt wartend
   const z = await createUser(randomUUID(), 'zufall@example.com', {}, true);
   assert.deepEqual([z.role, z.active], ['mitarbeiter', false]);
+});
+
+test('akkus: Anzahl an der Maschine, beim Ausleihen und Zurückgeben; fehlende Akkus brauchen Notiz', async () => {
+  const m = await one(U.lv, `insert into public.machines (name, battery_count, battery_type) values ('Akku-Bohrschrauber', 2, 'Bosch 18 V') returning *`);
+  assert.deepEqual([m.battery_count, m.battery_type], [2, 'Bosch 18 V']);
+  await fails(as(U.lv, `update public.machines set battery_count = 51 where id = $1`, [m.id]), /machines_battery_count_chk/);
+  await fails(as(U.lv, `update public.machines set battery_type = '  ' where id = $1`, [m.id]), /machines_battery_type_chk/);
+  const upd = await as(U.lv, `update public.machines set battery_count = 3 where id = $1`, [m.id]);
+  assert.equal(upd.affectedRows, 1);
+  await fails(as(U.lv, `update public.loans set batteries_out = 1`), DENIED);
+
+  await fails(rpc(U.a, 'machine_checkout', { p_machine: m.id, p_request: randomUUID(), p_batteries: 51 }), /^LGR:invalid_batteries$/);
+  await fails(rpc(U.a, 'machine_checkout', { p_machine: m.id, p_request: randomUUID(), p_batteries: -1 }), /^LGR:invalid_batteries$/);
+  const l = await rpc(U.a, 'machine_checkout', { p_machine: m.id, p_request: randomUUID(), p_batteries: 2 });
+  assert.equal(l.batteries_out, 2);
+  const o = await one(U.a, `select open_batteries_out from public.machine_overview where id = $1`, [m.id]);
+  assert.equal(o.open_batteries_out, 2);
+  const lo = await one(U.a, `select batteries_out, batteries_back from public.loan_overview where id = $1`, [l.id]);
+  assert.deepEqual([lo.batteries_out, lo.batteries_back], [2, null]);
+
+  await fails(rpc(U.a, 'machine_return', { p_machine: m.id, p_request: randomUUID(), p_batteries: 1 }), /^LGR:batteries_note_required$/);
+  await fails(rpc(U.a, 'machine_return', { p_machine: m.id, p_request: randomUUID(), p_batteries: 99, p_note: 'x' }), /^LGR:invalid_batteries$/);
+  const back = await rpc(U.a, 'machine_return', { p_machine: m.id, p_request: randomUUID(), p_batteries: 1, p_note: 'Ein Akku ist noch auf der Baustelle' });
+  assert.deepEqual([back.batteries_out, back.batteries_back], [2, 1]);
+  const o2 = await one(U.a, `select open_batteries_out, last_batteries_out, last_batteries_back, status from public.machine_overview where id = $1`, [m.id]);
+  assert.deepEqual([o2.open_batteries_out, o2.last_batteries_out, o2.last_batteries_back, o2.status], [null, 2, 1, 'verfuegbar']);
+  const log = await su(`select details from public.audit_log where action = 'zurueckgeben' and entity_id = $1`, [m.id]);
+  assert.deepEqual([log.rows[0].details.akkus_mit, log.rows[0].details.akkus_zurueck], [2, 1]);
+  const logOut = await su(`select details from public.audit_log where action = 'ausleihen' and entity_id = $1`, [m.id]);
+  assert.equal(logOut.rows[0].details.akkus, 2);
+
+  // ohne Angabe (Gerät ohne Akkus): wie bisher
+  const l2 = await rpc(U.a, 'machine_checkout', { p_machine: m.id, p_request: randomUUID() });
+  assert.equal(l2.batteries_out, null);
+  const b2 = await rpc(U.a, 'machine_return', { p_machine: m.id, p_request: randomUUID(), p_batteries: 0 });
+  assert.deepEqual([b2.batteries_out, b2.batteries_back], [null, 0], 'ohne Angabe beim Ausleihen keine Notizpflicht');
 });

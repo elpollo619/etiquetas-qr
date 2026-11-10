@@ -144,6 +144,13 @@ geprüft (KI-Vorschläge → Mensch bestätigt) erfassen. **Keine erfundenen Zah
   Auf der Karte (Maschine/Artikel) steht der Abschnitt «Originalfotos aus der Fotoanalyse» eingeklappt mit Anzahl,
   sobald das Hauptbild ein eigener Anhang ist (z. B. Herstellerbild) – so erscheint nicht alles doppelt. Ist das
   Hauptbild selbst ein Originalfoto, bleibt der Abschnitt offen: nur dort zeigt der Punkt, wo das Objekt steht.
+- **Akkus gehören zur Maschine** (keine eigenen Einträge mehr): `machines.battery_count` (0–50; leer = keine Akkus oder noch
+  nicht gezählt) und `machines.battery_type` (z. B. «Bosch 18 V Power for ALL»). Hat ein Gerät Akkus (Anzahl > 0 oder Typ ohne
+  Anzahl), fragt «Maschine ausleihen», wie viele mitgehen (`loans.batteries_out`), «Zurückgeben», wie viele zurückkommen
+  (`loans.batteries_back`). Fehlen welche, ist eine Notiz Pflicht (`LGR:batteries_note_required`); die Karte zeigt danach einen
+  Hinweis. `machine_checkout(…, p_batteries int)` / `machine_return(…, p_batteries int)`; `machine_overview` zusätzlich
+  **open_batteries_out, last_batteries_out, last_batteries_back**. Das Protokoll speichert `akkus` bzw. `akkus_mit`/`akkus_zurueck`.
+  Lose Rundzellen (AA, C, D …) bleiben normale Artikel (Verbrauchsmaterial).
 - `articles` neu: `category_id`, `product_url`. `article_overview` zusätzlich: **category_path, location_code_path**; photo_path wie oben.
 - `set_components`: id, set_id (Maschine mit is_set), machine_id | article_id | name (freie Komponente), qty, note, sort
 - `photos` / `photo_overview`: id, location_id, path (Storage `photos/<sha256>.jpg`), sha256 (Originaldatei), file_name, folder,
@@ -238,7 +245,8 @@ api.listComponents(setId)                      → set_components (+ machine_cod
 api.saveComponent(obj) / api.deleteComponent(id)
 
 Bestehend, erweitert: saveLocation(short_code, responsible_id, cover_photo_id), saveMachine(category_id, responsible_id, is_set,
-product_url), saveArticle(category_id, product_url), createInventory({ name, note, location_id }).
+product_url, battery_count, battery_type), saveArticle(category_id, product_url), createInventory({ name, note, location_id }),
+checkoutMachine(id, { …, batteries }), returnMachine(id, { …, batteries }) – `batteries` nur mitschicken, wenn gefragt.
 ```
 Neue Fehlercodes: `category_cycle, quantity_uncertain, kind_required, already_reviewed, open_items, invalid_input, too_many, invalid_file`.
 

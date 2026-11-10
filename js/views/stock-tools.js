@@ -4,7 +4,7 @@
 //   'einraeumen'  Einräumen/Umlagern per QR: Ziel-Lagerort scannen oder wählen, dann Maschinen/Artikel scannen oder suchen –
 //                 sie werden sofort dorthin verschoben (mit «Rückgängig»). Nur Lagerverantwortliche/Admins.
 import { t, registerStrings, fmtQty, fmtNum, unitLabel } from '../i18n.js';
-import { esc, clean, uuid, can, toast, sheet, errorText, emptyHtml, thumbHtml, hydrateThumbs, icon, debounce, numOrNull } from '../util.js';
+import { esc, clean, uuid, can, toast, sheet, errorText, emptyHtml, thumbHtml, hydrateThumbs, icon, debounce, numOrNull, itemThumbHtml } from '../util.js';
 import { consumptionMap, coverDays, coverText, suggestQty, stockState, STATE_PILL, STATE_LABEL } from '../consumption.js';
 
 registerStrings({
@@ -195,7 +195,7 @@ async function stockView(ctx) {
           const st = stockState(a);
           const unit = unitLabel(a.unit || 'Stk');
           return `<li class="list-item stock-row st-${st}" data-id="${esc(a.id)}">
-            ${thumbHtml(a.photo_path, '', 'thumb', 'box')}
+            ${itemThumbHtml(a, '', 'thumb', 'box')}
             <a class="li-main" href="#/a/${enc(a.code)}">
               <span class="li-title">${esc(a.name)}</span>
               <span class="li-sub">${esc([a.code, a.location_path].filter(Boolean).join(' · '))}</span>

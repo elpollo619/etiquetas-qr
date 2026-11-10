@@ -6,7 +6,7 @@
 import { t, registerStrings, fmtQty, locale } from '../i18n.js';
 import {
   esc, clean, debounce, can, toast, sheet, confirmSheet, errorText, emptyHtml, thumbHtml, hydrateThumbs,
-  statusPill, locTypeLabel, formData, icon, openLightbox,
+  statusPill, locTypeLabel, formData, icon, openLightbox, itemThumbHtml,
 } from '../util.js';
 import * as media from '../media.js';
 import * as labels from '../labels.js';
@@ -693,7 +693,7 @@ async function cardView(ctx) {
   };
 
   const articleRow = (a) => `<a class="list-item" href="#/a/${enc(a.code)}">
-      ${thumbHtml(a.photo_path, '', 'thumb', 'box')}
+      ${itemThumbHtml(a, '', 'thumb', 'box')}
       <div class="li-main">
         <span class="li-title">${esc(a.name)}${a.size ? ` <span class="muted">· ${esc(a.size)}</span>` : ''}</span>
         <span class="li-sub mono">${esc(a.code)}</span>
@@ -707,7 +707,7 @@ async function cardView(ctx) {
     const sub = [m.code, [m.brand, m.model].map(clean).filter(Boolean).join(' ')].filter(Boolean).join(' · ');
     const onLoan = (m.open_loan_id || m.status === 'ausgeliehen') && m.open_borrower_name;
     return `<a class="list-item" href="#/m/${enc(m.code)}">
-      ${thumbHtml(m.photo_path, '', 'thumb', 'machine')}
+      ${itemThumbHtml(m, '', 'thumb', 'machine')}
       <div class="li-main">
         <span class="li-title">${esc(m.name)}</span>
         <span class="li-sub">${esc(sub)}</span>

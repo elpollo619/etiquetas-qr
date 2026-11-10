@@ -193,6 +193,36 @@ describe('Ausleihe', () => {
     assert.equal(m.open_borrower_name, 'Daniel');
   });
 
+  test('Akkus: Anzahl an der Maschine, beim Ausleihen gefragt, fehlende Akkus brauchen Notiz (wie db.test.mjs «akkus»)', async () => {
+    const api = await demo();
+    await as(api, 'luca');
+    const hilti = await M(api, 'M-0002');
+    await rejects(api.saveMachine({ id: hilti.id, battery_count: 51 }), 'invalid_batteries');
+    await rejects(api.saveMachine({ id: hilti.id, battery_count: '1,5' }), 'invalid_batteries');
+    const saved = await api.saveMachine({ id: hilti.id, battery_count: '3', battery_type: '  Bosch 18 V  ' });
+    assert.deepEqual([saved.battery_count, saved.battery_type], [3, 'Bosch 18 V']);
+    await as(api, 'daniel');
+    await rejects(api.checkoutMachine(hilti.id, { batteries: -1 }), 'invalid_batteries');
+    const loan = await api.checkoutMachine(hilti.id, { requestId: randomUUID(), batteries: 2 });
+    assert.equal(loan.batteries_out, 2);
+    assert.equal((await M(api, 'M-0002')).open_batteries_out, 2);
+    await rejects(api.returnMachine(hilti.id, { batteries: 1 }), 'batteries_note_required');
+    const back = await api.returnMachine(hilti.id, { requestId: randomUUID(), batteries: 1, note: 'Einer liegt noch im Auto' });
+    assert.deepEqual([back.batteries_out, back.batteries_back], [2, 1]);
+    const m = await M(api, 'M-0002');
+    assert.deepEqual([m.open_batteries_out, m.last_batteries_out, m.last_batteries_back], [null, 2, 1]);
+    await as(api, 'luca');                       // Protokoll lesen nur Lagerverantwortliche
+    const [last] = await api.listAudit({ entity: 'machines', entityId: hilti.id, limit: 1 });
+    assert.deepEqual([last.details.akkus_mit, last.details.akkus_zurueck], [2, 1]);
+    const [lo] = await api.listLoans({ machineId: hilti.id, limit: 1 });
+    assert.deepEqual([lo.batteries_out, lo.batteries_back], [2, 1]);
+    // ohne Angabe wie bisher
+    const l2 = await api.checkoutMachine(hilti.id, {});
+    assert.equal(l2.batteries_out, null);
+    const b2 = await api.returnMachine(hilti.id, { batteries: 0 });
+    assert.equal(b2.batteries_back, 0);
+  });
+
   test('Rückgabe durch eine andere Person: Ausleiher und Rückgeber getrennt', async () => {
     const api = await demo();
     await as(api, 'daniel');
@@ -1276,6 +1306,18 @@ describe('Supabase-Implementierung (Ersatz-Client)', { skip: !hasHooks && 'modul
     await rejects(api.returnMachine(ID, { condition: 'defekt' }), 'note_required');
     assert.deepEqual(client.calls.at(-1).args, { p_machine: ID, p_request: null, p_condition: 'defekt', p_note: null });
     await rejects(api.checkoutMachine('M-0001', {}), 'not_found');
+    // Akkus: nur mitgeschickt, wenn angegeben; ganze Zahl 0–50
+    answer = { data: { id: ID }, error: null };
+    await api.checkoutMachine(ID, { batteries: '2' });
+    assert.equal(client.calls.at(-1).args.p_batteries, 2);
+    await api.returnMachine(ID, { batteries: 0 });
+    assert.equal(client.calls.at(-1).args.p_batteries, 0);
+    const n = client.calls.length;
+    await rejects(api.checkoutMachine(ID, { batteries: 1.5 }), 'invalid_batteries');
+    await rejects(api.returnMachine(ID, { batteries: 51 }), 'invalid_batteries');
+    assert.equal(client.calls.length, n, 'ungültige Anzahl erreicht den Server nicht');
+    answer = { data: null, error: { code: 'P0001', message: 'LGR:batteries_note_required' } };
+    await rejects(api.returnMachine(ID, { batteries: 1 }), 'batteries_note_required');
   });
 
   test('Speichern: nur erlaubte Spalten, kein Bestand/Code/Status im Update, 0 Zeilen → not_authorized', async () => {

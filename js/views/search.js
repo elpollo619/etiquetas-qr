@@ -2,7 +2,7 @@
 // Route: 'suche' – Query: ?q=<Text> &typ=<Typ> &kat=<Kategorie-id>|ohne &ort=<L-Code>|ohne &status=<Status> &arch=1
 // Alle Wörter müssen vorkommen (UND); Gross/Klein und Akzente egal; ä = ae, ö = oe, ü = ue.
 import { t, registerStrings, fmtQty, fmtNum, fmtElapsed } from '../i18n.js';
-import { esc, clean, icon, errorText, toast, thumbHtml, hydrateThumbs, statusPill, debounce, parseScanned, routeForCode, locTypeLabel } from '../util.js';
+import { esc, clean, icon, errorText, toast, thumbHtml, hydrateThumbs, statusPill, debounce, parseScanned, routeForCode, locTypeLabel, itemThumbHtml } from '../util.js';
 import { categorySubtreeIds, locationSubtreeIds, locationDisplayCode, kindLabel, confidencePill, detectionStatusLabel } from '../org-common.js';
 
 registerStrings({
@@ -431,7 +431,7 @@ function machineHtml(e, terms) {
   const comps = m.is_set && num(m.component_count) ? t('search.components', { n: fmtNum(m.component_count) }) : '';
   if (m.archived) pills.push(`<span class="pill pill-muted">${esc(t('common.archived'))}</span>`);
   return `<a class="list-item sr-item" href="${esc(e.href)}">
-    ${thumbHtml(m.photo_path, m.name, 'thumb', 'machine')}
+    ${itemThumbHtml(m, m.name, 'thumb', 'machine')}
     <span class="li-main">
       <span class="li-title">${esc(m.name)}</span>
       <span class="li-sub"><span class="mono">${esc(m.code)}</span>${tailHtml([comps, [m.brand, m.model].filter(Boolean).join(' '), m.category_path || m.category])}</span>
@@ -448,7 +448,7 @@ function articleHtml(e, terms) {
   const stock = num(a.stock);
   const cls = stock <= 0 ? 'pill-danger' : a.low_stock ? 'pill-warn' : 'pill-ok';
   return `<a class="list-item sr-item" href="${esc(e.href)}">
-    ${thumbHtml(a.photo_path, a.name, 'thumb', 'box')}
+    ${itemThumbHtml(a, a.name, 'thumb', 'box')}
     <span class="li-main">
       <span class="li-title">${esc(a.name)}</span>
       <span class="li-sub"><span class="mono">${esc(a.code)}</span>${tailHtml([a.art_no ? t('search.artNo', { n: a.art_no }) : '',

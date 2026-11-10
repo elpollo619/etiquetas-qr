@@ -167,9 +167,46 @@ export function openLightbox(url, alt = '') {
 }
 
 // ---------- Fotos (signierte URLs werden gesammelt nachgeladen) ----------
-export function thumbHtml(path, alt = '', cls = 'thumb', iconName = 'box') {
+export function thumbHtml(path, alt = '', cls = 'thumb', iconName = 'box', focus = null) {
   if (!path) return `<div class="${cls} thumb-empty" aria-hidden="true">${icon(iconName)}</div>`;
+  const fx = focus ? Number(focus.x) : NaN;
+  const fy = focus ? Number(focus.y) : NaN;
+  if (Number.isFinite(fx) && Number.isFinite(fy) && fx >= 0 && fx <= 1 && fy >= 0 && fy <= 1) {
+    // Originalfoto (ganzes Regal): auf den Punkt des Objekts vergrössern, damit man in der Liste das Objekt sieht
+    const o = `${Math.round(fx * 1000) / 10}% ${Math.round(fy * 1000) / 10}%`;
+    return `<span class="${cls} thumb-focus"><img data-path="${esc(path)}" alt="${esc(alt)}" loading="lazy" style="object-position:${o};transform-origin:${o}"></span>`;
+  }
   return `<img class="${cls}" data-path="${esc(path)}" alt="${esc(alt)}" loading="lazy">`;
+}
+// Bildchen nach Kategorie, wenn ein Artikel/eine Maschine noch kein Bild hat (statt immer derselben Schachtel)
+const CATEGORY_ICONS = [
+  [/akku|batter/i, 'battery'],
+  [/reinigung|hygiene|putz|wasch/i, 'spray'],
+  [/schreib|büro|buero/i, 'pen'],
+  [/papier|ordner|ablage|versand|couvert/i, 'paper'],
+  [/mess/i, 'ruler'],
+  [/farbe|lack|maler/i, 'brush'],
+  [/befestigung|montage|schraube/i, 'screw'],
+  [/elektro|kabel|leitung|leucht|steck/i, 'plug'],
+  [/sicherheit|schutz/i, 'shield'],
+  [/schlafzimmer|bett|wäsche|waesche/i, 'bed'],
+  [/küche|kueche|minibar|geschirr/i, 'cup'],
+  [/bad|dusch|wc/i, 'drop'],
+  [/entsorgung|abfall|kehricht/i, 'trash'],
+  [/garten|forst/i, 'leaf'],
+  [/werkzeug|handwerk/i, 'hammer'],
+  [/ersatz|zubehör|zubehoer/i, 'wrench'],
+];
+export function categoryIcon(path, fallback = 'box') {
+  const parts = String(path || '').split('›').map((x) => x.trim()).filter(Boolean).reverse();   // Unterkategorie zuerst
+  for (const part of parts) for (const [re, ic] of CATEGORY_ICONS) if (re.test(part)) return ic;
+  return fallback;
+}
+// Vorschau eines Artikels/einer Maschine: eigenes Bild, sonst Originalfoto mit Zoom auf das Objekt, sonst Bildchen der Kategorie
+export function itemThumbHtml(row, alt = '', cls = 'thumb', fallback = 'box') {
+  if (!row) return thumbHtml(null, alt, cls, fallback);
+  const focus = row.photo_pos_x != null && row.photo_pos_y != null ? { x: row.photo_pos_x, y: row.photo_pos_y } : null;
+  return thumbHtml(row.photo_path, alt, cls, categoryIcon(row.category_path || row.category, fallback), focus);
 }
 export async function hydrateThumbs(root, api) {
   const imgs = [...root.querySelectorAll('img[data-path]:not([src])')];
@@ -274,6 +311,20 @@ const ICONS = {
   tree: '<path d="M6 3v18M6 8h6M6 15h6"/><rect x="12" y="5" width="8" height="6" rx="1"/><rect x="12" y="12" width="8" height="6" rx="1"/>',
   upload: '<path d="M12 16V4M7 9l5-5 5 5M5 20h14"/>',
   folder: '<path d="M3 6a1 1 0 0 1 1-1h5l2 2h9a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/>',
+  spray: '<path d="M8 10h7v11H8z"/><path d="M9 10V6h5v4"/><path d="M14 7h3l2-2"/><path d="M19 8h1M19 11h1"/>',
+  pen: '<path d="M4 20l4-1L19 8l-3-3L5 16z"/><path d="M14 7l3 3"/>',
+  hammer: '<path d="M5 4h11l3 2.5L16 9H5z"/><path d="M9.5 9v12h3V9"/>',
+  ruler: '<rect x="3" y="8" width="18" height="8" rx="1"/><path d="M7 8v3M11 8v4M15 8v3M19 8v4"/>',
+  brush: '<rect x="4" y="3" width="14" height="5" rx="1"/><path d="M18 5.5h2v5h-8v3"/><rect x="10.5" y="13.5" width="3" height="7.5" rx="1"/>',
+  screw: '<path d="M8 4h8l-1 3H9z"/><path d="M12 7v13"/><path d="M9 10l6 1M9 13l6 1M9 16l6 1"/>',
+  plug: '<path d="M9 3v5M15 3v5"/><path d="M6 8h12v3a6 6 0 0 1-12 0z"/><path d="M12 17v4"/>',
+  shield: '<path d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6z"/>',
+  bed: '<path d="M3 18V7M3 13h18v5M21 13a3 3 0 0 0-3-3h-8v3"/><circle cx="7" cy="10.5" r="1.5"/>',
+  cup: '<path d="M5 8h11v6a5 5 0 0 1-5 5h-1a5 5 0 0 1-5-5z"/><path d="M16 10h2a2 2 0 0 1 0 4h-2"/><path d="M9 3v2M12 3v2"/>',
+  drop: '<path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z"/>',
+  leaf: '<path d="M5 19c0-8 5-14 15-14 0 10-6 15-14 15"/><path d="M5 19l7-7"/>',
+  battery: '<rect x="3" y="8" width="16" height="9" rx="1.5"/><path d="M21 11v3"/><path d="M7 11v3M10 11v3"/>',
+  paper: '<path d="M6 3h9l4 4v14H6z"/><path d="M9 11h7M9 14h7M9 17h4"/>',
   pin: '<path d="M12 21s-6-5.6-6-10a6 6 0 0 1 12 0c0 4.4-6 10-6 10z"/><circle cx="12" cy="11" r="2"/>',
 };
 export function icon(name, cls = 'ic') {

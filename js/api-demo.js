@@ -40,9 +40,9 @@ const ARTICLE_COLS = ['id', 'code', 'name', 'description', 'art_no', 'category',
   'category_id', 'product_url', 'reorder_qty'];
 const MACHINE_COLS = ['id', 'code', 'name', 'category', 'brand', 'model', 'serial_no', 'inventory_no', 'home_location_id',
   'status', 'condition', 'condition_note', 'notes', 'archived', 'created_by', 'created_at', 'updated_at',
-  'category_id', 'responsible_id', 'is_set', 'product_url'];
+  'category_id', 'responsible_id', 'is_set', 'product_url', 'battery_count', 'battery_type'];
 const LOAN_COLS = ['id', 'machine_id', 'borrower_id', 'checked_out_at', 'due_at', 'checkout_note', 'returned_at', 'returned_by',
-  'return_condition', 'return_note', 'checkout_request', 'return_request', 'corrected', 'created_by'];
+  'return_condition', 'return_note', 'checkout_request', 'return_request', 'corrected', 'created_by', 'batteries_out', 'batteries_back'];
 const MOVEMENT_COLS = ['id', 'article_id', 'type', 'qty', 'stock_before', 'stock_after', 'from_location_id', 'to_location_id',
   'user_id', 'note', 'request_id', 'created_at'];
 const SHOPPING_COLS = ['id', 'article_id', 'name', 'qty', 'unit', 'note', 'status', 'source', 'created_by', 'created_at',
@@ -62,9 +62,11 @@ const ARTICLE_INSERT = ['code', 'name', 'description', 'art_no', 'category', 'br
 const ARTICLE_UPDATE = ['name', 'description', 'art_no', 'category', 'brand', 'model', 'size', 'color', 'usage',
   'label_text', 'unit', 'min_stock', 'reorder_qty', 'location_id', 'notes', 'archived', 'category_id', 'product_url'];
 const MACHINE_INSERT = ['code', 'name', 'category', 'brand', 'model', 'serial_no', 'inventory_no', 'home_location_id',
-  'status', 'condition', 'condition_note', 'notes', 'archived', 'category_id', 'responsible_id', 'is_set', 'product_url'];
+  'status', 'condition', 'condition_note', 'notes', 'archived', 'category_id', 'responsible_id', 'is_set', 'product_url',
+  'battery_count', 'battery_type'];
 const MACHINE_UPDATE = ['name', 'category', 'brand', 'model', 'serial_no', 'inventory_no', 'home_location_id',
-  'condition', 'condition_note', 'notes', 'archived', 'category_id', 'responsible_id', 'is_set', 'product_url'];
+  'condition', 'condition_note', 'notes', 'archived', 'category_id', 'responsible_id', 'is_set', 'product_url',
+  'battery_count', 'battery_type'];
 const REF_COLS = new Set(['parent_id', 'location_id', 'home_location_id', 'category_id', 'responsible_id', 'cover_photo_id']);
 const NUM_COLS = new Set(['stock', 'min_stock', 'reorder_qty']);
 const BOOL_COLS = new Set(['archived', 'is_set']);
@@ -380,7 +382,13 @@ export function createApi({ LgrError = FallbackLgrError, storage, storageKey = S
         if (v !== null && !URL_RE.test(v)) throw E('invalid_url');
       } else if (k === 'name') v = v === null ? '' : String(v).trim();
       else if (BOOL_COLS.has(k)) v = Boolean(v);
-      else if (NUM_COLS.has(k)) {
+      else if (k === 'battery_count') {   // machines_battery_count_chk: leer oder ganze Zahl 0–50
+        v = num(v);
+        if (Number.isNaN(v) || (v !== null && (!Number.isInteger(v) || v < 0 || v > 50))) throw E('invalid_batteries');
+      } else if (k === 'battery_type') {   // machines_battery_type_chk: höchstens 120 Zeichen
+        v = trimOrNull(v);
+        if (v !== null && v.length > 120) throw E('invalid_value', 'battery_type');
+      } else if (NUM_COLS.has(k)) {
         v = num(v);
         if (Number.isNaN(v) || (v !== null && v < 0)) throw E('invalid_qty');
         // articles_reorder_qty_chk: leer oder 0 < n < 1e9
@@ -510,14 +518,21 @@ export function createApi({ LgrError = FallbackLgrError, storage, storageKey = S
       site_name: c.org.siteName(site),
     };
   }
-  const vArticle = (a, c) => ({
-    ...pick(a, ARTICLE_COLS),
-    location_path: c.path(a.location_id),
-    location_code_path: c.codePath(a.location_id),
-    category_path: c.org.categoryPath(a.category_id),
-    low_stock: a.min_stock !== null && a.min_stock !== undefined && a.stock <= a.min_stock,
-    photo_path: c.photo.article(a.id) ?? c.org.detectionPhoto.article(a.id),
-  });
+  // Punkt des Objekts im Originalfoto – nur wenn kein eigenes Bild (wie photo_pos_x/photo_pos_y der Ansichten)
+  const detFocus = (c, kind, id) => (c.photo[kind](id) ? { x: null, y: null } : c.org.detectionPos[kind](id));
+  const vArticle = (a, c) => {
+    const f = detFocus(c, 'article', a.id);
+    return {
+      ...pick(a, ARTICLE_COLS),
+      location_path: c.path(a.location_id),
+      location_code_path: c.codePath(a.location_id),
+      category_path: c.org.categoryPath(a.category_id),
+      low_stock: a.min_stock !== null && a.min_stock !== undefined && a.stock <= a.min_stock,
+      photo_path: c.photo.article(a.id) ?? c.org.detectionPhoto.article(a.id),
+      photo_pos_x: f.x,
+      photo_pos_y: f.y,
+    };
+  };
   function vMachine(m, c) {
     const o = c.openLoan.get(m.id) || null;
     const l = c.lastLoan.get(m.id) || null;
@@ -540,7 +555,12 @@ export function createApi({ LgrError = FallbackLgrError, storage, storageKey = S
       last_returned_at: l ? l.returned_at : null,
       last_returned_by_name: l ? c.name(l.returned_by) : null,
       last_return_condition: l ? l.return_condition : null,
+      open_batteries_out: o ? o.batteries_out ?? null : null,
+      last_batteries_out: l ? l.batteries_out ?? null : null,
+      last_batteries_back: l ? l.batteries_back ?? null : null,
       photo_path: c.photo.machine(m.id) ?? c.org.detectionPhoto.machine(m.id),   // sonst Originalfoto der Erkennung
+      photo_pos_x: detFocus(c, 'machine', m.id).x,
+      photo_pos_y: detFocus(c, 'machine', m.id).y,
     };
   }
   function vLoan(l, c) {
@@ -754,8 +774,17 @@ export function createApi({ LgrError = FallbackLgrError, storage, storageKey = S
   }
 
   // ---- Maschinen: Ausleihe ----
-  function coreCheckout(machineId, { requestId, dueAt, note, borrowerId } = {}) {
+  // Anzahl Akkus (loans_batteries_chk): leer → null, sonst ganze Zahl 0–50
+  function batteryArg(v) {
+    if (v === undefined || v === null || v === '') return null;
+    const n = typeof v === 'number' ? v : Number(String(v).trim());
+    if (!Number.isInteger(n) || n < 0 || n > 50) throw E('invalid_batteries');
+    return n;
+  }
+
+  function coreCheckout(machineId, { requestId, dueAt, note, borrowerId, batteries } = {}) {
     if (!isActive()) throw E('not_authorized');
+    const bat = batteryArg(batteries);
     const self = uid();
     const borrower = borrowerId || self;
     if (borrower !== self) {
@@ -778,20 +807,22 @@ export function createApi({ LgrError = FallbackLgrError, storage, storageKey = S
       id: uuid(), machine_id: m.id, borrower_id: borrower, checked_out_at: nowIso(), due_at: due,
       checkout_note: trimOrNull(note), returned_at: null, returned_by: null, return_condition: null, return_note: null,
       checkout_request: requestId || null, return_request: null, corrected: false, created_by: self,
+      batteries_out: bat, batteries_back: null,
     };
     db.loans.push(loan);
     m.status = 'ausgeliehen';
     m.updated_at = nowIso();
-    audit('ausleihen', 'machines', m.id, { loan: loan.id, borrower, due });
+    audit('ausleihen', 'machines', m.id, { loan: loan.id, borrower, due, akkus: bat });
     return loan;
   }
 
-  function coreReturn(machineId, { requestId, condition, note } = {}) {
+  function coreReturn(machineId, { requestId, condition, note, batteries } = {}) {
     if (!isActive()) throw E('not_authorized');
     const cond = condition || 'ok';
     if (!CONDITIONS.includes(cond)) throw E('invalid_condition');
     const n = trimOrNull(note);
     if (cond !== 'ok' && !n) throw E('note_required');
+    const bat = batteryArg(batteries);
     const m = db.machines.find((x) => x.id === machineId);
     if (!m) throw E('not_found');
     if (requestId) {
@@ -800,14 +831,18 @@ export function createApi({ LgrError = FallbackLgrError, storage, storageKey = S
     }
     const l = db.loans.find((x) => x.machine_id === m.id && !x.returned_at);
     if (!l) throw E('not_on_loan');
+    // fehlen Akkus, ist eine Notiz Pflicht (wo sind sie?)
+    if (bat !== null && l.batteries_out != null && bat < l.batteries_out && !n) throw E('batteries_note_required');
     const t = iso(Math.max(nowMs(), ms(l.checked_out_at)));   // greatest(now(), checked_out_at)
-    Object.assign(l, { returned_at: t, returned_by: uid(), return_condition: cond, return_note: n, return_request: requestId || null });
+    Object.assign(l, { returned_at: t, returned_by: uid(), return_condition: cond, return_note: n, return_request: requestId || null,
+      batteries_back: bat });
     m.status = cond === 'defekt' ? 'defekt' : 'verfuegbar';
     m.condition = cond;
     m.condition_note = n ?? (cond === 'ok' ? null : m.condition_note);
     m.updated_at = t;
     audit('zurueckgeben', 'machines', m.id, {
       loan: l.id, borrower: l.borrower_id, condition: cond, note: n, stellvertretend: l.borrower_id !== uid(),
+      akkus_mit: l.batteries_out ?? null, akkus_zurueck: bat,
     });
     return l;
   }

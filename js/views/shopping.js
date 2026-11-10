@@ -5,7 +5,7 @@
 //   • Gekauft → bei Artikeln gleich als Zugang einbuchen. «Bestellt» merkt, dass jemand es schon besorgt.
 //   • Bewusst KEIN Bestellmodul: keine Lieferanten, Preise, Bestellungen oder Rechnungen.
 import { t, registerStrings, fmtQty, fmtNum, fmtDate, unitLabel } from '../i18n.js';
-import { esc, clean, uuid, toast, sheet, errorText, emptyHtml, thumbHtml, hydrateThumbs, icon, debounce, numOrNull } from '../util.js';
+import { esc, clean, uuid, toast, sheet, errorText, emptyHtml, thumbHtml, hydrateThumbs, icon, debounce, numOrNull, itemThumbHtml } from '../util.js';
 import { consumptionMap, coverDays, coverText, suggestQty } from '../consumption.js';
 
 registerStrings({
@@ -229,7 +229,7 @@ async function shoppingView(ctx) {
     $('[data-sugg-h]').textContent = t('shop.sugg', { n: fmtNum(sugg.length) });
     $('[data-sugg]').innerHTML = sugg.map((a) => {
       const cv = coverText(coverDays(a, consMap.get(a.id)));
-      return `<li class="list-item" data-art="${esc(a.id)}">${thumbHtml(a.photo_path, '', 'thumb', 'box')}
+      return `<li class="list-item" data-art="${esc(a.id)}">${itemThumbHtml(a, '', 'thumb', 'box')}
         <a class="li-main" href="#/a/${enc(a.code)}"><span class="li-title">${esc(a.name)}</span>
           <span class="li-sub">${esc([a.code, a.location_path].filter(Boolean).join(' · '))}</span>
           <span class="li-sub">${esc(t('shop.stockLine', { stock: fmtQty(a.stock, a.unit), min: fmtQty(a.min_stock, a.unit) }) + (cv ? ' · ' + cv : ''))}</span></a>
@@ -266,7 +266,7 @@ async function shoppingView(ctx) {
     const hits = arts.filter((a) => { const h = norm([a.name, a.code, a.brand, a.art_no].join(' ')); return words.every((w) => h.includes(w)); }).slice(0, 6);
     matchBox.hidden = !hits.length;
     const listed = onList();
-    matchList.innerHTML = hits.map((a) => `<li class="list-item">${thumbHtml(a.photo_path, '', 'thumb', 'box')}
+    matchList.innerHTML = hits.map((a) => `<li class="list-item">${itemThumbHtml(a, '', 'thumb', 'box')}
       <div class="li-main"><span class="li-title">${esc(a.name)}</span><span class="li-sub">${esc([a.code, fmtQty(a.stock, a.unit), a.location_path].filter(Boolean).join(' · '))}</span></div>
       <div class="li-end">${listed.has(a.id) ? `<span class="pill pill-ok">${esc(t('shop.isListed'))}</span>`
         : `<button type="button" class="btn sm primary" data-pick="${esc(a.id)}">${icon('plus')}${esc(t('shop.add'))}</button>`}</div></li>`).join('');

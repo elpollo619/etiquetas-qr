@@ -2,7 +2,7 @@
 import { t, registerStrings, locale, fmtDate, fmtDateTime, fmtNum, fmtQty, unitLabel } from '../i18n.js';
 import {
   esc, clean, can, icon, emptyHtml, errorText, toast, sheet, statusPill, parseScanned,
-  downloadCsv, downloadBlob, numOrNull, debounce, thumbHtml, hydrateThumbs,
+  downloadCsv, downloadBlob, numOrNull, debounce, thumbHtml, hydrateThumbs, itemThumbHtml,
 } from '../util.js';
 import { locationSubtreeIds, sha256Hex } from '../org-common.js';
 import { xlsxBlob } from '../xlsx.js';
@@ -722,7 +722,7 @@ async function detailRoute(ctx) {
     const ist = r.c ? num(r.c.counted) : null;
     const mark = diffMark(r);
     return `<div class="list-item" data-aid="${esc(a.id)}" style="flex-wrap:wrap${mark ? `;box-shadow:${mark}` : ''}">
-      ${thumbHtml(a.photo_path, '', 'thumb', 'box')}
+      ${itemThumbHtml(a, '', 'thumb', 'box')}
       <div class="li-main" style="flex:1 1 190px">
         <span class="li-title" style="white-space:normal">${esc(a.name)}${a.archived ? ` <span class="pill pill-muted">${esc(t('inventory.archived'))}</span>` : ''}</span>
         <span class="li-sub"><span class="mono">${esc(a.code)}</span>${a.location_path ? ' · ' + esc(a.location_path) : ''}</span>
@@ -759,7 +759,7 @@ async function detailRoute(ctx) {
       ? `<span class="li-sub" style="white-space:normal;color:var(--info)">${icon('handoff')} ${esc(t('inventory.onLoanBy', { name: m.open_borrower_name || '–', d: fmtDateTime(m.open_since) }))}${m.overdue ? ` <span class="pill pill-danger">${esc(t('inventory.overdue'))}</span>` : ''}</span>`
       : '';
     return `<div class="list-item" data-mid="${esc(m.id)}" style="flex-wrap:wrap">
-      ${thumbHtml(m.photo_path, '', 'thumb', 'machine')}
+      ${itemThumbHtml(m, '', 'thumb', 'machine')}
       <div class="li-main">
         <span class="li-title" style="white-space:normal">${esc(m.name)}${m.archived ? ` <span class="pill pill-muted">${esc(t('inventory.archived'))}</span>` : ''}</span>
         <span class="li-sub"><span class="mono">${esc(m.code)}</span>${m.location_path ? ' · ' + esc(m.location_path) : ''}</span>

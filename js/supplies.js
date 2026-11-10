@@ -4,7 +4,7 @@
 //   mountUsedFor(el, ctx, article)   Abschnitt auf der Artikelkarte: «Wird gebraucht für» (Liste der Geräte).
 // Fällt ein Material durch die Entnahme unter den Mindestbestand, kommt es automatisch auf die Einkaufsliste (Datenbank).
 import { t, registerStrings, fmtQty, unitLabel } from './i18n.js';
-import { esc, clean, uuid, can, toast, sheet, errorText, thumbHtml, hydrateThumbs, icon, debounce } from './util.js';
+import { esc, clean, uuid, can, toast, sheet, errorText, thumbHtml, hydrateThumbs, icon, debounce, itemThumbHtml } from './util.js';
 import { stockState, STATE_PILL, STATE_LABEL } from './consumption.js';
 
 registerStrings({
@@ -164,7 +164,7 @@ async function addSheet(ctx, machine, linkedRows) {
           catch (err) { res.innerHTML = `<li class="muted small">${esc(errorText(err))}</li>`; return; }
         }
         const hits = arts.filter((a) => { const h = norm([a.name, a.code, a.brand, a.art_no].join(' ')); return words.every((w) => h.includes(w)); }).slice(0, 12);
-        res.innerHTML = hits.length ? hits.map((a) => `<li class="list-item">${thumbHtml(a.photo_path, '', 'thumb', 'box')}
+        res.innerHTML = hits.length ? hits.map((a) => `<li class="list-item">${itemThumbHtml(a, '', 'thumb', 'box')}
           <div class="li-main"><span class="li-title">${esc(a.name)}</span><span class="li-sub">${esc([a.code, fmtQty(a.stock, a.unit), a.location_path].filter(Boolean).join(' · '))}</span></div>
           <div class="li-end">${linked.has(a.id) ? `<span class="pill pill-ok">${esc(t('supply.linked'))}</span>`
             : `<button type="button" class="btn sm primary" data-pick="${esc(a.id)}">${icon('plus')}${esc(t('supply.link'))}</button>`}</div></li>`).join('')

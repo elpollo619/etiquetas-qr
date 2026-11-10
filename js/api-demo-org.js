@@ -294,11 +294,13 @@ export function orgViewIndex(db) {
   const comp = new Map();
   for (const c of db.set_components || []) comp.set(c.set_id, (comp.get(c.set_id) || 0) + 1);
   const detPath = (kind) => (id) => { const d = id ? best[kind].get(id) : null; return d ? photoPath.get(d.photo_id) ?? null : null; };
+  const detPos = (kind) => (id) => { const d = id ? best[kind].get(id) : null; return d ? { x: d.pos_x ?? null, y: d.pos_y ?? null } : { x: null, y: null }; };
   const siteName = new Map((db.sites || []).map((s) => [s.id, s.name]));
   return {
     categoryPath: (id) => (id && cats.has(id) ? cats.get(id) : null),
     photoPath: (id) => (id && photoPath.has(id) ? photoPath.get(id) : null),
     detectionPhoto: { machine: detPath('machine'), article: detPath('article') },
+    detectionPos: { machine: detPos('machine'), article: detPos('article') },
     componentCount: (id) => comp.get(id) || 0,
     siteName: (id) => (id && siteName.has(id) ? siteName.get(id) : null),   // location_overview.site_name
   };

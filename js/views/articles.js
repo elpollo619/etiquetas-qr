@@ -6,7 +6,7 @@
 import { t, registerStrings, fmtQty, fmtNum, fmtDateTime, unitLabel, locale } from '../i18n.js';
 import {
   esc, clean, uuid, debounce, can, toast, sheet, confirmSheet, errorText, emptyHtml, thumbHtml,
-  hydrateThumbs, downloadCsv, today, formData, nullIfEmpty, numOrNull, icon, openLightbox,
+  hydrateThumbs, downloadCsv, today, formData, nullIfEmpty, numOrNull, icon, openLightbox, itemThumbHtml,
 } from '../util.js';
 import * as media from '../media.js';
 import * as labels from '../labels.js';
@@ -797,7 +797,7 @@ async function listView(ctx) {
     });
   };
   const rowHtml = (r) => `<a class="list-item" href="#/a/${enc(r.code)}">
-      ${thumbHtml(r.photo_path, '', 'thumb', 'box')}
+      ${itemThumbHtml(r, '', 'thumb', 'box')}
       <div class="li-main">
         <span class="li-title">${esc(r.name)}${r.size ? ` <span class="muted">· ${esc(r.size)}</span>` : ''}</span>
         <span class="li-sub">${esc(r.code)}${r.location_path ? ' · ' + esc(r.location_path) : ''}</span>

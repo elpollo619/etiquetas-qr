@@ -3,7 +3,7 @@
 import { t, registerStrings, fmtDateTime, fmtElapsed, fmtNum, fmtQty, locale } from '../i18n.js';
 import {
   esc, clean, uuid, debounce, can, statusPill, conditionLabel, emptyHtml, errorText, toast, sheet,
-  confirmSheet, openLightbox, thumbHtml, hydrateThumbs, downloadCsv, formData, toLocalInput, fromLocalInput, icon, numOrNull,
+  confirmSheet, openLightbox, thumbHtml, hydrateThumbs, downloadCsv, formData, toLocalInput, fromLocalInput, icon, numOrNull, itemThumbHtml,
 } from '../util.js';
 import { categoryOptionsHtml, categorySubtreeIds, confidencePill, sourceLabel } from '../org-common.js';
 import { mountSupplies } from '../supplies.js';
@@ -196,6 +196,28 @@ registerStrings({
     'machines.form.productUrlInvalid': 'Bitte eine vollständige Adresse eingeben, die mit http:// oder https:// beginnt.',
     'machines.form.isSet': 'Ist ein Set (mit Komponenten)',
     'machines.form.isSetHint': 'Zusammengehörige Teile, z. B. Koffer mit Akkus und Ladegerät. Die Komponenten erfasst du danach auf der Maschinenkarte.',
+    'machines.batteries': 'Akkus',
+    'machines.bat.count1': '1 Akku',
+    'machines.bat.countN': '{n} Akkus',
+    'machines.bat.unknown': 'Anzahl noch nicht gezählt',
+    'machines.bat.less': 'Ein Akku weniger',
+    'machines.bat.more': 'Ein Akku mehr',
+    'machines.bat.withLoan': 'Akkus mitgenommen',
+    'machines.bat.lastMissing': 'Bei der letzten Rückgabe fehlten Akkus: {out} mitgenommen, {back} zurück.',
+    'machines.co.bat': 'Wie viele Akkus nimmst du mit?',
+    'machines.co.batHint': 'Zu diesem Gerät gehören {count}.',
+    'machines.co.batUnknown': 'Wie viele Akkus zum Gerät gehören, ist noch nicht gezählt.',
+    'machines.ret.bat': 'Wie viele Akkus bringst du zurück?',
+    'machines.ret.batOut': 'Mitgenommen: {count}.',
+    'machines.ret.batMissing1': 'Es fehlt 1 Akku. Bitte notiere kurz, wo er ist.',
+    'machines.ret.batMissingN': 'Es fehlen {n} Akkus. Bitte notiere kurz, wo sie sind.',
+    'machines.ret.noteBat': 'Wo sind die fehlenden Akkus?',
+    'machines.hist.bat': 'Akkus: {out} mit, {back} zurück',
+    'machines.loans.bat': 'mit {count}',
+    'machines.form.batCount': 'Akkus (Anzahl)',
+    'machines.form.batType': 'Akku-Typ',
+    'machines.form.batTypePh': 'z. B. Bosch 18 V Power for ALL',
+    'machines.form.batHint': 'Wie viele Akkus zum Gerät gehören. Leer lassen, wenn das Gerät keine Akkus hat. Beim Ausleihen fragt die App, wie viele mitgehen.',
     'machines.comp.title': 'Komponenten',
     'machines.comp.count1': '1 Komponente',
     'machines.comp.countN': '{n} Komponenten',
@@ -418,6 +440,28 @@ registerStrings({
     'machines.form.productUrlInvalid': 'Introduz um endereço completo que comece por http:// ou https://.',
     'machines.form.isSet': 'É um conjunto (com componentes)',
     'machines.form.isSetHint': 'Peças que pertencem juntas, p. ex. mala com baterias e carregador. Os componentes registam-se depois na ficha da máquina.',
+    'machines.batteries': 'Baterias',
+    'machines.bat.count1': '1 bateria',
+    'machines.bat.countN': '{n} baterias',
+    'machines.bat.unknown': 'Quantidade ainda não contada',
+    'machines.bat.less': 'Menos uma bateria',
+    'machines.bat.more': 'Mais uma bateria',
+    'machines.bat.withLoan': 'Baterias levadas',
+    'machines.bat.lastMissing': 'Na última devolução faltavam baterias: {out} levadas, {back} devolvidas.',
+    'machines.co.bat': 'Quantas baterias levas?',
+    'machines.co.batHint': 'Este aparelho tem {count}.',
+    'machines.co.batUnknown': 'Ainda não se contou quantas baterias pertencem ao aparelho.',
+    'machines.ret.bat': 'Quantas baterias devolves?',
+    'machines.ret.batOut': 'Levadas: {count}.',
+    'machines.ret.batMissing1': 'Falta 1 bateria. Anota onde está.',
+    'machines.ret.batMissingN': 'Faltam {n} baterias. Anota onde estão.',
+    'machines.ret.noteBat': 'Onde estão as baterias que faltam?',
+    'machines.hist.bat': 'Baterias: {out} levadas, {back} devolvidas',
+    'machines.loans.bat': 'com {count}',
+    'machines.form.batCount': 'Baterias (quantidade)',
+    'machines.form.batType': 'Tipo de bateria',
+    'machines.form.batTypePh': 'ex.: Bosch 18 V Power for ALL',
+    'machines.form.batHint': 'Quantas baterias pertencem ao aparelho. Deixa vazio se o aparelho não tem baterias. Ao emprestar, a app pergunta quantas vão.',
     'machines.comp.title': 'Componentes',
     'machines.comp.count1': '1 componente',
     'machines.comp.countN': '{n} componentes',
@@ -640,6 +684,28 @@ registerStrings({
     'machines.form.productUrlInvalid': 'Introduce una dirección completa que empiece por http:// o https://.',
     'machines.form.isSet': 'Es un set (con componentes)',
     'machines.form.isSetHint': 'Piezas que van juntas, p. ej. maletín con baterías y cargador. Los componentes se registran después en la ficha de la máquina.',
+    'machines.batteries': 'Baterías',
+    'machines.bat.count1': '1 batería',
+    'machines.bat.countN': '{n} baterías',
+    'machines.bat.unknown': 'Cantidad aún no contada',
+    'machines.bat.less': 'Una batería menos',
+    'machines.bat.more': 'Una batería más',
+    'machines.bat.withLoan': 'Baterías llevadas',
+    'machines.bat.lastMissing': 'En la última devolución faltaban baterías: {out} llevadas, {back} devueltas.',
+    'machines.co.bat': '¿Cuántas baterías te llevas?',
+    'machines.co.batHint': 'Este aparato tiene {count}.',
+    'machines.co.batUnknown': 'Aún no se ha contado cuántas baterías tiene el aparato.',
+    'machines.ret.bat': '¿Cuántas baterías devuelves?',
+    'machines.ret.batOut': 'Llevadas: {count}.',
+    'machines.ret.batMissing1': 'Falta 1 batería. Anota dónde está.',
+    'machines.ret.batMissingN': 'Faltan {n} baterías. Anota dónde están.',
+    'machines.ret.noteBat': '¿Dónde están las baterías que faltan?',
+    'machines.hist.bat': 'Baterías: {out} llevadas, {back} devueltas',
+    'machines.loans.bat': 'con {count}',
+    'machines.form.batCount': 'Baterías (cantidad)',
+    'machines.form.batType': 'Tipo de batería',
+    'machines.form.batTypePh': 'p. ej. Bosch 18 V Power for ALL',
+    'machines.form.batHint': 'Cuántas baterías tiene el aparato. Déjalo vacío si no tiene baterías. Al prestarlo, la app pregunta cuántas se llevan.',
     'machines.comp.title': 'Componentes',
     'machines.comp.count1': '1 componente',
     'machines.comp.countN': '{n} componentes',
@@ -782,6 +848,47 @@ function personHtml(ctx, id, name) {
   return `${esc(name || '–')}${mine ? ` <span class="muted">(${esc(t('common.you'))})</span>` : ''}`;
 }
 function countLabel(n) { return n === 1 ? t('machines.countOne') : t('machines.count', { n }); }
+// Akkus gehören zur Maschine: Anzahl/Typ an der Maschine, beim Ausleihen wird gefragt, wie viele mitgehen
+function batLabel(n) { return n === 1 ? t('machines.bat.count1') : t('machines.bat.countN', { n }); }
+function hasBatteries(m) {
+  return !!m && ((m.battery_count ?? 0) > 0 || (m.battery_count == null && !!clean(m.battery_type)));
+}
+function batteryText(m) {
+  if (!m || (m.battery_count == null && !clean(m.battery_type))) return '';
+  const n = m.battery_count == null ? t('machines.bat.unknown') : batLabel(m.battery_count);
+  return [n, clean(m.battery_type)].filter(Boolean).join(' · ');
+}
+function batInt(v) {   // leer → null, ganze Zahl 0–50 → Zahl, sonst NaN
+  const s = String(v ?? '').trim();
+  if (s === '') return null;
+  const n = Number(s);
+  return Number.isInteger(n) && n >= 0 && n <= 50 ? n : NaN;
+}
+function batStepperHtml(id, value, labelKey, hint) {
+  return `<div class="field" data-bat-field>
+      <label for="${id}">${esc(t(labelKey))}</label>
+      <div class="qty-stepper">
+        <button type="button" class="btn" data-bat-step="-1" aria-label="${esc(t('machines.bat.less'))}">${icon('minus')}</button>
+        <input id="${id}" type="text" inputmode="numeric" autocomplete="off" maxlength="2" value="${esc(value ?? '')}" aria-describedby="${id}-h">
+        <button type="button" class="btn" data-bat-step="1" aria-label="${esc(t('machines.bat.more'))}">${icon('plus')}</button>
+      </div>
+      <div class="hint" id="${id}-h" data-bat-hint aria-live="polite">${esc(hint || '')}</div>
+    </div>`;
+}
+function bindBatStepper(el, id, onChange) {
+  const inp = el.querySelector('#' + id);
+  if (!inp) return () => null;
+  el.querySelectorAll('[data-bat-step]').forEach((b) => b.addEventListener('click', () => {
+    const cur = batInt(inp.value);
+    const base = Number.isNaN(cur) || cur === null ? 0 : cur;
+    inp.value = String(Math.max(0, Math.min(50, base + Number(b.dataset.batStep))));
+    if (onChange) onChange(batInt(inp.value));
+  }));
+  inp.addEventListener('input', () => { if (onChange) onChange(batInt(inp.value)); });
+  inp.addEventListener('focus', () => { try { inp.select(); } catch (e) { /* egal */ } });
+  if (onChange) onChange(batInt(inp.value));
+  return () => batInt(inp.value);
+}
 
 // Gemeinsame Module des Leads: dynamisch laden, damit diese Ansicht auch ohne sie funktioniert
 let modsCache = null;
@@ -1034,6 +1141,7 @@ function renderMachineCard(ctx, root, m, mods) {
     usage.push(kv(t('machines.due'), m.open_due_at
       ? `<span${overdue ? ' style="color:var(--danger)"' : ''}>${esc(fmtDateTime(m.open_due_at))}</span>`
       : esc(t('machines.dueOpen'))));
+    if (m.open_batteries_out != null) usage.push(kv(t('machines.bat.withLoan'), esc(batLabel(m.open_batteries_out))));
   } else {
     usage.push(kv(t('common.status'), statusPill(m.status)));
     if (m.last_borrower_name || m.last_returned_at) {
@@ -1060,6 +1168,9 @@ function renderMachineCard(ctx, root, m, mods) {
     notices.push(`<div class="alert">${icon('user')}<span>${esc(t('machines.returnFor', { name: m.open_borrower_name }))}</span></div>`);
   }
   if (m.archived) notices.push(`<div class="alert warn">${icon('alert')}<span>${esc(t('machines.isArchived'))}</span></div>`);
+  if (!onLoan && m.last_batteries_out != null && m.last_batteries_back != null && m.last_batteries_back < m.last_batteries_out) {
+    notices.push(`<div class="alert warn">${icon('alert')}<span>${esc(t('machines.bat.lastMissing', { out: m.last_batteries_out, back: m.last_batteries_back }))}</span></div>`);
+  }
 
   // --- Grosse Hauptaktion ---
   let actionHtml;
@@ -1084,6 +1195,7 @@ function renderMachineCard(ctx, root, m, mods) {
   const details = [
     ['common.category', categoryHtml(m)], ['common.brand', esc(m.brand)], ['common.model', esc(m.model)],
     ['machines.serialNo', esc(m.serial_no)], ['machines.inventoryNo', esc(m.inventory_no)],
+    ['machines.batteries', esc(batteryText(m))],
     ['machines.productUrl', productLinkHtml(m.product_url)],
   ].filter(([, v]) => clean(v));
   const detailsHtml = (details.length || m.notes)
@@ -1488,7 +1600,10 @@ function historyHtml(ctx, loans, shown) {
       ? `${esc(fmtDateTime(l.returned_at))}<div class="small muted">${esc(fmtElapsed(l.checked_out_at, l.returned_at))}</div>`
       : `<span class="muted">–</span><div class="small muted">${esc(fmtElapsed(l.checked_out_at))}</div>`;
     const byOther = l.returned_at && l.returned_by && l.returned_by !== l.borrower_id;
+    const batLine = l.batteries_out != null || l.batteries_back != null
+      ? `<div${l.batteries_out != null && l.batteries_back != null && l.batteries_back < l.batteries_out ? ' style="color:var(--warn)"' : ''}>${esc(t('machines.hist.bat', { out: l.batteries_out ?? '–', back: l.batteries_back ?? '–' }))}</div>` : '';
     const notes = [
+      batLine,
       l.checkout_note ? `<div><span class="muted">${esc(t('machines.hist.noteOut'))}:</span> ${esc(l.checkout_note)}</div>` : '',
       l.return_note ? `<div><span class="muted">${esc(t('machines.hist.noteBack'))}:</span> ${esc(l.return_note)}</div>` : '',
     ].join('') || '<span class="muted">–</span>';
@@ -1548,6 +1663,8 @@ function openCheckout(ctx, m, profilesP) {
   const choices = dueChoices();
   let choice = choices[0];
   const meName = ctx.user ? ctx.user.full_name : '';
+  const askBat = hasBatteries(m);
+  let readBat = () => null;
   const body = `
     <p class="muted" style="margin:0"><b style="color:var(--text)">${esc(m.name)}</b> · ${esc(m.code)}</p>
     ${m.status === 'reserviert' ? `<div class="alert warn">${icon('alert')}<span>${esc(t('status.reserviert'))}</span></div>` : ''}
@@ -1566,6 +1683,8 @@ function openCheckout(ctx, m, profilesP) {
       <label for="mc-co-for">${esc(t('machines.co.for'))}</label>
       <select id="mc-co-for"><option value="">${esc(t('machines.co.me', { name: meName }))}</option></select>
     </div>` : ''}
+    ${askBat ? batStepperHtml('mc-co-bat', m.battery_count ?? 1, 'machines.co.bat',
+        m.battery_count != null ? t('machines.co.batHint', { count: batLabel(m.battery_count) }) : t('machines.co.batUnknown')) : ''}
     <div class="field">
       <label for="mc-co-note">${esc(t('common.note'))} <span class="muted">(${esc(t('common.optional'))})</span></label>
       <textarea id="mc-co-note" rows="2" maxlength="500" placeholder="${esc(t('machines.co.notePh'))}"></textarea>
@@ -1577,6 +1696,7 @@ function openCheckout(ctx, m, profilesP) {
     body,
     onOpen: (el) => {
       if (m.is_set) fillSetChecklist(el, ctx, m);
+      if (askBat) readBat = bindBatStepper(el, 'mc-co-bat');
       const hint = el.querySelector('[data-due-hint]');
       const pick = el.querySelector('#mc-co-pick');
       const update = () => {
@@ -1613,7 +1733,9 @@ function openCheckout(ctx, m, profilesP) {
           const sel = el.querySelector('#mc-co-for');
           const borrowerId = sel && sel.value ? sel.value : null;
           const note = textOrNull(el.querySelector('#mc-co-note').value);
-          const loan = await ctx.api.checkoutMachine(m.id, { requestId, dueAt: d ? d.toISOString() : null, note, borrowerId });
+          const batteries = askBat ? readBat() : null;
+          if (Number.isNaN(batteries)) { el.querySelector('#mc-co-bat').focus(); throw fail('invalid_batteries'); }
+          const loan = await ctx.api.checkoutMachine(m.id, { requestId, dueAt: d ? d.toISOString() : null, note, borrowerId, batteries });
           return { loan, forName: borrowerId ? sel.selectedOptions[0].textContent : null };
         },
       },
@@ -1630,11 +1752,15 @@ function openReturn(ctx, m, mods) {
   const requestId = uuid();
   const me = ctx.user ? ctx.user.id : null;
   const mine = !!me && m.open_borrower_id === me;
+  const batOut = m.open_batteries_out ?? null;
+  const askBat = batOut !== null || hasBatteries(m);
   const body = `
     <p class="muted" style="margin:0"><b style="color:var(--text)">${esc(m.name)}</b> · ${esc(m.code)}</p>
     ${!mine && m.open_borrower_name ? `<div class="alert">${icon('user')}<span>${esc(t('machines.returnFor', { name: m.open_borrower_name }))}</span></div>` : ''}
     ${m.open_since ? `<p class="small muted" style="margin:0">${esc(t('machines.ret.lentBy', { name: m.open_borrower_name || '–', date: fmtDateTime(m.open_since), elapsed: fmtElapsed(m.open_since) }))}</p>` : ''}
     ${m.is_set ? setChecklistHtml() : ''}
+    ${askBat ? batStepperHtml('mc-ret-bat', batOut ?? m.battery_count ?? '', 'machines.ret.bat',
+        batOut !== null ? t('machines.ret.batOut', { count: batLabel(batOut) }) : '') : ''}
     <fieldset class="field" style="border:0;padding:0;margin:0;min-width:0">
       <legend class="lbl" style="padding:0;margin-bottom:5px">${esc(t('machines.ret.cond'))}</legend>
       <div class="radio-cards">
@@ -1649,7 +1775,8 @@ function openReturn(ctx, m, mods) {
       <textarea id="mc-ret-note" rows="3" maxlength="1000"></textarea>
       <div class="hint" data-note-hint hidden>${esc(t('machines.ret.noteHint'))}</div>
     </div>`;
-  let cond = 'ok', note = null;
+  let cond = 'ok', note = null, missing = 0;
+  let readBat = () => null;
   return sheet({
     title: t('machines.return'),
     body,
@@ -1658,15 +1785,33 @@ function openReturn(ctx, m, mods) {
       const lbl = el.querySelector('[data-note-label]');
       const hint = el.querySelector('[data-note-hint]');
       const ta = el.querySelector('#mc-ret-note');
-      el.querySelectorAll('input[name="mc-cond"]').forEach((r) => r.addEventListener('change', () => {
-        const need = r.value !== 'ok';
+      let defect = false;
+      missing = 0;
+      const refresh = () => {
+        const need = defect || missing > 0;
         lbl.innerHTML = need
-          ? `${esc(t('machines.ret.noteReq'))} <span aria-hidden="true">*</span>`
+          ? `${esc(defect ? t('machines.ret.noteReq') : t('machines.ret.noteBat'))} <span aria-hidden="true">*</span>`
           : `${esc(t('common.note'))} <span class="muted">(${esc(t('common.optional'))})</span>`;
-        hint.hidden = !need;
+        hint.hidden = !defect;
         ta.required = need;
         ta.setAttribute('aria-required', String(need));
+      };
+      el.querySelectorAll('input[name="mc-cond"]').forEach((r) => r.addEventListener('change', () => {
+        defect = r.value !== 'ok';
+        refresh();
       }));
+      if (askBat) {
+        const batHint = el.querySelector('[data-bat-hint]');
+        readBat = bindBatStepper(el, 'mc-ret-bat', (n) => {
+          missing = batOut !== null && n !== null && !Number.isNaN(n) && n < batOut ? batOut - n : 0;
+          if (batHint) {
+            batHint.textContent = missing ? (missing === 1 ? t('machines.ret.batMissing1') : t('machines.ret.batMissingN', { n: missing }))
+              : batOut !== null ? t('machines.ret.batOut', { count: batLabel(batOut) }) : '';
+            batHint.style.color = missing ? 'var(--warn)' : '';
+          }
+          refresh();
+        });
+      }
     },
     actions: [
       { label: t('btn.cancel'), kind: 'ghost', value: null },
@@ -1677,7 +1822,10 @@ function openReturn(ctx, m, mods) {
           cond = r ? r.value : 'ok';
           note = textOrNull(el.querySelector('#mc-ret-note').value);
           if (cond !== 'ok' && !note) { el.querySelector('#mc-ret-note').focus(); throw fail('note_required'); }
-          return ctx.api.returnMachine(m.id, { requestId, condition: cond, note });
+          const batteries = askBat ? readBat() : null;
+          if (Number.isNaN(batteries)) { el.querySelector('#mc-ret-bat').focus(); throw fail('invalid_batteries'); }
+          if (missing > 0 && !note) { el.querySelector('#mc-ret-note').focus(); throw fail('batteries_note_required'); }
+          return ctx.api.returnMachine(m.id, { requestId, condition: cond, note, batteries });
         },
       },
     ],
@@ -1931,7 +2079,7 @@ async function machineList(ctx) {
         ? t('machines.withMe', { elapsed: shortElapsed(m.open_since) })
         : t('machines.withBorrower', { name: m.open_borrower_name || '–', elapsed: shortElapsed(m.open_since) }))}</span>` : '';
     return `<a class="list-item" href="${codeHref(m.code)}">
-      ${thumbHtml(m.photo_path, '', 'thumb', 'machine')}
+      ${itemThumbHtml(m, '', 'thumb', 'machine')}
       <div class="li-main">
         <span class="li-title">${esc(m.name)}</span>
         <span class="li-sub">${esc(m.code)}${m.location_path ? ' · ' + esc(m.location_path) : ''}</span>
@@ -2114,6 +2262,16 @@ async function machineForm(ctx, isNew) {
         <input type="text" id="mf-inv" name="inventory_no" maxlength="100" value="${v('inventory_no')}" spellcheck="false">
       </div>
       <div class="field">
+        <label for="mf-bat">${esc(t('machines.form.batCount'))}</label>
+        <input type="text" id="mf-bat" name="battery_count" inputmode="numeric" maxlength="2" value="${v('battery_count')}" aria-describedby="mf-bat-h">
+        <span class="hint" id="mf-bat-h">${esc(t('machines.form.batHint'))}</span>
+      </div>
+      <div class="field">
+        <label for="mf-battype">${esc(t('machines.form.batType'))}</label>
+        <input type="text" id="mf-battype" name="battery_type" list="mf-battypes" maxlength="120" value="${v('battery_type')}" placeholder="${esc(t('machines.form.batTypePh'))}">
+        <datalist id="mf-battypes">${uniq('battery_type').map((c) => `<option value="${esc(c)}"></option>`).join('')}</datalist>
+      </div>
+      <div class="field">
         <label for="mf-loc">${esc(t('common.location'))}</label>
         <select id="mf-loc" name="home_location_id" aria-describedby="mf-loc-h">${locOpts}</select>
         <span class="hint" id="mf-loc-h">${esc(t('machines.form.homeHint'))}</span>
@@ -2174,6 +2332,8 @@ async function machineForm(ctx, isNew) {
     if (urlRaw && !/^[a-z][a-z0-9+.-]*:/i.test(urlRaw) && /^[\w-]+(\.[\w-]+)+(\/|$)/.test(urlRaw)) urlRaw = 'https://' + urlRaw;   // «bosch.de/…»
     const productUrl = urlRaw ? safeUrl(urlRaw) : null;
     if (urlRaw && !productUrl) { showErr(t('machines.form.productUrlInvalid'), form.querySelector('#mf-url')); return; }
+    const batteryCount = batInt(d.battery_count);
+    if (Number.isNaN(batteryCount)) { showErr(t('err.invalid_batteries'), form.querySelector('#mf-bat')); return; }
     const obj = {
       name,
       brand: textOrNull(clean(d.brand)),
@@ -2188,6 +2348,10 @@ async function machineForm(ctx, isNew) {
       product_url: productUrl ? urlRaw : null,
       is_set: !!d.is_set,
     };
+    // Akkus nur mitschicken, wenn geändert (so bleibt Speichern auch ohne die neuen Spalten möglich)
+    const batteryType = textOrNull(clean(d.battery_type));
+    if (batteryCount !== ((m && m.battery_count) ?? null)) obj.battery_count = batteryCount;
+    if (batteryType !== ((m && m.battery_type) ?? null)) obj.battery_type = batteryType;
     if (cats.length) {
       // Kategorie aus der Liste: category_id + bisheriges Textfeld (Name), damit Altdaten und Etiketten stimmen
       const sel = d.category_id || null;
@@ -2382,7 +2546,7 @@ async function loansPage(ctx) {
       <div class="li-main">
         <span class="li-title">${esc(l.machine_name || l.machine_code)}</span>
         <span class="li-sub">${esc(l.machine_code)} · ${personHtml(ctx, l.borrower_id, l.borrower_name)}</span>
-        <span class="li-sub">${esc(t('machines.loans.since', { date: fmtDateTime(l.checked_out_at), elapsed: fmtElapsed(l.checked_out_at) }))}</span>
+        <span class="li-sub">${esc(t('machines.loans.since', { date: fmtDateTime(l.checked_out_at), elapsed: fmtElapsed(l.checked_out_at) }))}${l.batteries_out != null ? ` · ${esc(t('machines.loans.bat', { count: batLabel(l.batteries_out) }))}` : ''}</span>
       </div>
       <div class="li-end">
         ${badge}

@@ -38,9 +38,11 @@ const ARTICLE_INSERT = ['code', 'name', 'description', 'art_no', 'category', 'br
 const ARTICLE_UPDATE = ['name', 'description', 'art_no', 'category', 'brand', 'model', 'size', 'color', 'usage',
   'label_text', 'unit', 'min_stock', 'reorder_qty', 'location_id', 'notes', 'archived', 'category_id', 'product_url'];
 const MACHINE_INSERT = ['code', 'name', 'category', 'brand', 'model', 'serial_no', 'inventory_no', 'home_location_id',
-  'status', 'condition', 'condition_note', 'notes', 'archived', 'category_id', 'responsible_id', 'is_set', 'product_url'];
+  'status', 'condition', 'condition_note', 'notes', 'archived', 'category_id', 'responsible_id', 'is_set', 'product_url',
+  'battery_count', 'battery_type'];
 const MACHINE_UPDATE = ['name', 'category', 'brand', 'model', 'serial_no', 'inventory_no', 'home_location_id',
-  'condition', 'condition_note', 'notes', 'archived', 'category_id', 'responsible_id', 'is_set', 'product_url'];
+  'condition', 'condition_note', 'notes', 'archived', 'category_id', 'responsible_id', 'is_set', 'product_url',
+  'battery_count', 'battery_type'];
 
 const REF_COLS = new Set(['parent_id', 'location_id', 'home_location_id', 'category_id', 'responsible_id', 'cover_photo_id']);
 const NUM_COLS = new Set(['stock', 'min_stock', 'reorder_qty']);
@@ -68,6 +70,12 @@ function trimOrNull(v) {
   if (v === undefined || v === null) return null;
   const s = String(v).trim();
   return s === '' ? null : s;
+}
+// Anzahl Akkus beim Ausleihen/Zurückgeben: leer → null, ganze Zahl 0–50 → Zahl (wie loans_batteries_chk), sonst NaN
+function batteryCount(v) {
+  if (v === undefined || v === null || v === '') return null;
+  const n = typeof v === 'number' ? v : Number(String(v).trim());
+  return Number.isInteger(n) && n >= 0 && n <= 50 ? n : NaN;
 }
 // Zahl aus Eingabe ('1,5', "1'000", 3) → number | null (leer) | NaN (ungültig)
 function num(v) {
@@ -288,6 +296,7 @@ export function createApi({ LgrError, client } = {}) {
       case '23514': {
         const cn = constraintName(msg);
         if (/short_code/.test(cn)) return E('invalid_short_code');
+        if (/batter/.test(cn)) return E('invalid_batteries');
         if (/product_url/.test(cn)) return E('invalid_url');
         if (/set_components_(target|self)/.test(cn)) return E('invalid_input');
         if (/name|title/.test(cn)) return E('name_required');
@@ -389,6 +398,13 @@ export function createApi({ LgrError, client } = {}) {
       else if (k === 'product_url') { v = trimOrNull(v); if (v !== null && !URL_RE.test(v)) throw E('invalid_url'); }
       else if (k === 'name') v = v === null ? '' : String(v).trim();
       else if (BOOL_COLS.has(k)) v = Boolean(v);
+      else if (k === 'battery_count') {   // machines_battery_count_chk: leer oder ganze Zahl 0–50
+        v = num(v);
+        if (Number.isNaN(v) || (v !== null && (!Number.isInteger(v) || v < 0 || v > 50))) throw E('invalid_batteries');
+      } else if (k === 'battery_type') {   // machines_battery_type_chk: höchstens 120 Zeichen
+        v = trimOrNull(v);
+        if (v !== null && v.length > 120) throw E('invalid_value', 'battery_type');
+      }
       else if (NUM_COLS.has(k)) {
         v = num(v);
         if (Number.isNaN(v) || (v !== null && v < 0)) throw E('invalid_qty');
@@ -655,24 +671,32 @@ export function createApi({ LgrError, client } = {}) {
     getMachineByCode: wrap(async (code) => getOne('machine_overview', 'code', code)),
     saveMachine: wrap(async (obj) => saveRow({ table: 'machines', view: 'machine_overview', keysInsert: MACHINE_INSERT, keysUpdate: MACHINE_UPDATE, prefix: 'M-' }, obj)),
     deleteMachine: wrap(async (id) => deleteRow('machines', 'machine', id)),
-    checkoutMachine: wrap(async (id, { requestId, dueAt, note, borrowerId } = {}) => {
+    checkoutMachine: wrap(async (id, { requestId, dueAt, note, borrowerId, batteries } = {}) => {
       if (!isUuid(id)) throw E('not_found');
-      return rpc('machine_checkout', {
+      const args = {
         p_machine: id,
         p_request: requestId || null,
         p_due: toIso(dueAt, { endOfDay: true }),
         p_note: trimOrNull(note),
         p_borrower: borrowerId || null,
-      });
+      };
+      const b = batteryCount(batteries);
+      if (Number.isNaN(b)) throw E('invalid_batteries');
+      if (b !== null) args.p_batteries = b;     // nur mitschicken, wenn gefragt (Geräte ohne Akkus wie bisher)
+      return rpc('machine_checkout', args);
     }),
-    returnMachine: wrap(async (id, { requestId, condition, note } = {}) => {
+    returnMachine: wrap(async (id, { requestId, condition, note, batteries } = {}) => {
       if (!isUuid(id)) throw E('not_found');
-      return rpc('machine_return', {
+      const args = {
         p_machine: id,
         p_request: requestId || null,
         p_condition: condition || 'ok',
         p_note: trimOrNull(note),
-      });
+      };
+      const b = batteryCount(batteries);
+      if (Number.isNaN(b)) throw E('invalid_batteries');
+      if (b !== null) args.p_batteries = b;
+      return rpc('machine_return', args);
     }),
     setMachineStatus: wrap(async (id, status, note) => {
       if (!isUuid(id)) throw E('not_found');
