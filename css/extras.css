@@ -185,3 +185,11 @@ details[data-done-sec] > summary { cursor: pointer; list-style: revert; }
 .supply-list .li-title, .supply-list .li-sub { white-space: normal; overflow-wrap: anywhere; }
 .supply-list .li-sub em { font-style: normal; }
 .supply-row .btn.sm[data-take] { min-width: 48px; min-height: 40px; }
+
+/* Originalfotos der Fotoanalyse: eingeklappt, wenn der Eintrag ein eigenes Bild hat */
+.det-more > summary { display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 6px 2px; list-style: none; border-radius: 8px; }
+.det-more > summary::-webkit-details-marker { display: none; }
+.det-more > summary h2 { margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 650; }
+.det-more > summary .ic { width: 16px; height: 16px; color: var(--muted); transition: transform .15s; flex: none; }
+.det-more[open] > summary .ic { transform: rotate(90deg); }
+.det-more[open] > [data-det-body] { margin-top: 8px; }

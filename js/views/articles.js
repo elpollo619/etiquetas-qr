@@ -654,6 +654,9 @@ function mountDetections(section, api, articleId, name, unit) {
       const box = section.querySelector('[data-det-body]');
       box.innerHTML = html;
       section.hidden = false;
+      // Eintrag hat ein eigenes Bild → Originalfotos stehen eingeklappt darunter (nicht alles doppelt); Anzahl im Titel
+      const cnt = section.querySelector('[data-det-count]');
+      if (cnt) cnt.textContent = '(' + box.querySelectorAll('figure').length + ')';
       hydrateThumbs(box, api);
       box.addEventListener('click', (e) => {
         const b = e.target.closest('[data-detzoom]');
@@ -1233,8 +1236,10 @@ async function cardView(ctx) {
     </section>
 
     <section class="section" aria-labelledby="art-det-h" data-det hidden>
-      <h2 id="art-det-h">${esc(t('articles.det.title'))}</h2>
-      <div data-det-body></div>
+      ${a.photo_path
+    ? `<details class="det-more"><summary>${icon('chevron')}<h2 id="art-det-h">${esc(t('articles.det.title'))}</h2><span class="muted small" data-det-count></span></summary><div data-det-body></div></details>`
+    : `<h2 id="art-det-h">${esc(t('articles.det.title'))}</h2>
+      <div data-det-body></div>`}
     </section>
 
     <div data-usedfor hidden></div>

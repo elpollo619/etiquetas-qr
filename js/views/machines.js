@@ -926,6 +926,9 @@ function mountDetections(section, ctx, filter, name) {
       const box = section.querySelector('[data-det-body]');
       box.innerHTML = html;
       section.hidden = false;
+      // Eintrag hat ein eigenes Bild → Originalfotos stehen eingeklappt darunter (nicht alles doppelt); Anzahl im Titel
+      const cnt = section.querySelector('[data-det-count]');
+      if (cnt) cnt.textContent = '(' + box.querySelectorAll('figure').length + ')';
       hydrateThumbs(box, ctx.api);
       box.addEventListener('click', (e) => {
         const b = e.target.closest('[data-detzoom]');
@@ -1140,8 +1143,10 @@ function renderMachineCard(ctx, root, m, mods) {
       <div class="card">${detailsHtml}</div>
     </section>
     <section class="section" aria-labelledby="mc-det-photos-h" data-det hidden>
-      <h2 id="mc-det-photos-h">${esc(t('machines.det.title'))}</h2>
-      <div data-det-body></div>
+      ${m.photo_path
+    ? `<details class="det-more"><summary>${icon('chevron')}<h2 id="mc-det-photos-h">${esc(t('machines.det.title'))}</h2><span class="muted small" data-det-count></span></summary><div data-det-body></div></details>`
+    : `<h2 id="mc-det-photos-h">${esc(t('machines.det.title'))}</h2>
+      <div data-det-body></div>`}
     </section>
     <div data-supplies hidden></div>
     <div class="stack" data-media></div>
