@@ -1,4 +1,6 @@
-# Ordo – Lagerverwaltung mit QR-Etiketten
+# Ordem – Lagerverwaltung mit QR-Etiketten
+
+_Ordem e Progresso._
 
 Interne Web-App für Lager, Material, Maschinen und Werkzeuge: QR-Etikett auf die Maschine kleben, mit dem Handy
 scannen, **«Maschine ausleihen»** bzw. **«Maschine zurückgeben»** – jederzeit sichtbar, wer was hat.

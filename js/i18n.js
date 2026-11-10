@@ -88,8 +88,8 @@ export function unitLabel(u) {
 // ---------------------------------------------------------------------------
 registerStrings({
   de: {
-    'app.name': 'Ordo',
-    'app.tagline': 'Lagerverwaltung',
+    'app.name': 'Ordem',
+    'app.tagline': 'Ordem e Progresso',
     'nav.home': 'Übersicht', 'nav.scan': 'Scannen', 'nav.machines': 'Maschinen', 'nav.articles': 'Artikel',
     'nav.locations': 'Lagerorte', 'nav.loans': 'Ausgeliehene Maschinen', 'nav.loansShort': 'Ausgeliehen',
     'nav.inventory': 'Inventur', 'nav.employees': 'Mitarbeiter', 'nav.labels': 'Etiketten', 'nav.audit': 'Protokoll',
@@ -196,8 +196,8 @@ registerStrings({
     'lang.label': 'Sprache',
   },
   pt: {
-    'app.name': 'Ordo',
-    'app.tagline': 'Gestão de armazém',
+    'app.name': 'Ordem',
+    'app.tagline': 'Ordem e Progresso',
     'nav.home': 'Resumo', 'nav.scan': 'Ler QR', 'nav.machines': 'Máquinas', 'nav.articles': 'Artigos',
     'nav.locations': 'Localizações', 'nav.loans': 'Máquinas emprestadas', 'nav.loansShort': 'Emprestadas',
     'nav.inventory': 'Inventário', 'nav.employees': 'Colaboradores', 'nav.labels': 'Etiquetas', 'nav.audit': 'Registo',
@@ -303,8 +303,8 @@ registerStrings({
     'lang.label': 'Idioma',
   },
   es: {
-    'app.name': 'Ordo',
-    'app.tagline': 'Gestión de almacén',
+    'app.name': 'Ordem',
+    'app.tagline': 'Ordem e Progresso',
     'nav.home': 'Resumen', 'nav.scan': 'Escanear', 'nav.machines': 'Máquinas', 'nav.articles': 'Artículos',
     'nav.locations': 'Ubicaciones', 'nav.loans': 'Máquinas prestadas', 'nav.loansShort': 'Prestadas',
     'nav.inventory': 'Inventario', 'nav.employees': 'Empleados', 'nav.labels': 'Etiquetas', 'nav.audit': 'Registro',
