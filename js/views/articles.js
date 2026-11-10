@@ -643,7 +643,7 @@ function detectionsHtml(list, name, unit) {
   return `<p class="hint" style="margin:0 0 8px">${esc(t('articles.det.intro'))}</p>
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,240px),1fr));gap:12px">${rows.map(fig).join('')}</div>`;
 }
-function mountDetections(section, api, articleId, name, unit) {
+function mountDetections(section, api, articleId, name, unit, ownPhoto) {
   if (!section || typeof api.listDetections !== 'function') return;
   Promise.resolve()
     .then(() => api.listDetections({ articleId }))
@@ -654,9 +654,12 @@ function mountDetections(section, api, articleId, name, unit) {
       const box = section.querySelector('[data-det-body]');
       box.innerHTML = html;
       section.hidden = false;
-      // Eintrag hat ein eigenes Bild → Originalfotos stehen eingeklappt darunter (nicht alles doppelt); Anzahl im Titel
+      // Eintrag hat ein eigenes Bild (Anhang) → Originalfotos stehen eingeklappt darunter (nicht alles doppelt).
+      // Ist das Hauptbild selbst ein Originalfoto, bleibt der Abschnitt offen: nur dort zeigt der Punkt, wo das Objekt steht.
       const cnt = section.querySelector('[data-det-count]');
       if (cnt) cnt.textContent = '(' + box.querySelectorAll('figure').length + ')';
+      const more = section.querySelector('details.det-more');
+      if (more) more.open = (Array.isArray(rows) ? rows : []).some((d) => d.photo_path && d.photo_path === ownPhoto);
       hydrateThumbs(box, api);
       box.addEventListener('click', (e) => {
         const b = e.target.closest('[data-detzoom]');
@@ -1246,7 +1249,7 @@ async function cardView(ctx) {
     <div data-media></div>
   </div>`;
   const root = ctx.el.firstElementChild;
-  mountDetections(root.querySelector('[data-det]'), api, a.id, a.name, a.unit);
+  mountDetections(root.querySelector('[data-det]'), api, a.id, a.name, a.unit, a.photo_path);
   mountUsedFor(root.querySelector('[data-usedfor]'), ctx, a);
 
   // Hero: Foto (antippen = gross) oder QR-Code

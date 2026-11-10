@@ -141,6 +141,9 @@ geprüft (KI-Vorschläge → Mensch bestätigt) erfassen. **Keine erfundenen Zah
 - `machines` neu: `category_id`, `responsible_id` (zugeteilte Person, z. B. Laptop), `is_set`, `product_url` (Herstellerseite, nur Link).
   `machine_overview` zusätzlich: **category_path, responsible_name, location_code_path, component_count**; `photo_path` fällt auf das
   Originalfoto der bestätigten Erkennung zurück.
+  Auf der Karte (Maschine/Artikel) steht der Abschnitt «Originalfotos aus der Fotoanalyse» eingeklappt mit Anzahl,
+  sobald das Hauptbild ein eigener Anhang ist (z. B. Herstellerbild) – so erscheint nicht alles doppelt. Ist das
+  Hauptbild selbst ein Originalfoto, bleibt der Abschnitt offen: nur dort zeigt der Punkt, wo das Objekt steht.
 - `articles` neu: `category_id`, `product_url`. `article_overview` zusätzlich: **category_path, location_code_path**; photo_path wie oben.
 - `set_components`: id, set_id (Maschine mit is_set), machine_id | article_id | name (freie Komponente), qty, note, sort
 - `photos` / `photo_overview`: id, location_id, path (Storage `photos/<sha256>.jpg`), sha256 (Originaldatei), file_name, folder,

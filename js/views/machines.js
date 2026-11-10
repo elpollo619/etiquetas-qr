@@ -915,7 +915,7 @@ function detectionsHtml(list, name) {
   return `<p class="hint" style="margin:0 0 8px">${esc(t('machines.det.intro'))}</p>
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,240px),1fr));gap:12px">${rows.map(fig).join('')}</div>`;
 }
-function mountDetections(section, ctx, filter, name) {
+function mountDetections(section, ctx, filter, name, ownPhoto) {
   if (!section || typeof ctx.api.listDetections !== 'function') return;
   Promise.resolve()
     .then(() => ctx.api.listDetections(filter))
@@ -926,9 +926,12 @@ function mountDetections(section, ctx, filter, name) {
       const box = section.querySelector('[data-det-body]');
       box.innerHTML = html;
       section.hidden = false;
-      // Eintrag hat ein eigenes Bild → Originalfotos stehen eingeklappt darunter (nicht alles doppelt); Anzahl im Titel
+      // Eintrag hat ein eigenes Bild (Anhang) → Originalfotos stehen eingeklappt darunter (nicht alles doppelt).
+      // Ist das Hauptbild selbst ein Originalfoto, bleibt der Abschnitt offen: nur dort zeigt der Punkt, wo das Objekt steht.
       const cnt = section.querySelector('[data-det-count]');
       if (cnt) cnt.textContent = '(' + box.querySelectorAll('figure').length + ')';
+      const more = section.querySelector('details.det-more');
+      if (more) more.open = (Array.isArray(rows) ? rows : []).some((d) => d.photo_path && d.photo_path === ownPhoto);
       hydrateThumbs(box, ctx.api);
       box.addEventListener('click', (e) => {
         const b = e.target.closest('[data-detzoom]');
@@ -1153,7 +1156,7 @@ function renderMachineCard(ctx, root, m, mods) {
     ${manageHtml}`;
 
   hydrateThumbs(root, api);
-  mountDetections(root.querySelector('[data-det]'), ctx, { machineId: m.id }, m.name);
+  mountDetections(root.querySelector('[data-det]'), ctx, { machineId: m.id }, m.name, m.photo_path);
 
   // Komponenten (nur Sets)
   let comps = [];
