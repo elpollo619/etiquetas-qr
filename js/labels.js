@@ -11,6 +11,7 @@ registerStrings({
     'labels.scan': 'Scannen für Details', 'labels.scanMachine': 'Scannen: ausleihen / zurückgeben',
     'labels.machine': 'Maschine', 'labels.nr': 'Nr. {code}', 'labels.inv': 'Inv.', 'labels.artNo': 'Art.-Nr.', 'labels.min': 'Min. Bestand {qty}',
     'labels.qrOk': 'QR gut lesbar ({mm} mm pro Punkt).', 'labels.qrSmall': 'QR sehr klein – grössere Etikette wählen.',
+    'labels.shortQr': 'Schmales Band: Der QR enthält nur den Code. Mit «Scannen» in der App lesen (nicht mit der Handy-Kamera).',
     'labels.printHint': 'Im Druckdialog: Drucker «Brother QL-800», Ränder «Keine», Skalierung 100 %. Für PDF «Als PDF speichern» wählen.',
     'labels.fmt.quer': 'quer', 'labels.fmt.hoch': 'hoch', 'labels.fmt.endlos': 'Endlos, Länge wählbar', 'labels.fmt.small': 'klein', 'labels.fmt.strip': 'Regalstreifen',
     'labels.noQr': 'QR-Generator nicht geladen.',
@@ -22,6 +23,7 @@ registerStrings({
     'labels.scan': 'Ler para ver detalhes', 'labels.scanMachine': 'Ler: levantar / devolver',
     'labels.machine': 'Máquina', 'labels.nr': 'N.º {code}', 'labels.inv': 'Inv.', 'labels.artNo': 'Ref.', 'labels.min': 'Stock mín. {qty}',
     'labels.qrOk': 'QR bem legível ({mm} mm por ponto).', 'labels.qrSmall': 'QR muito pequeno – escolhe uma etiqueta maior.',
+    'labels.shortQr': 'Fita estreita: o QR só tem o código. Lê com «Digitalizar» na app (não com a câmara do telemóvel).',
     'labels.printHint': 'Na janela de impressão: impressora «Brother QL-800», margens «Nenhuma», escala 100 %. Para PDF escolhe «Guardar como PDF».',
     'labels.fmt.quer': 'horizontal', 'labels.fmt.hoch': 'vertical', 'labels.fmt.endlos': 'contínuo, comprimento à escolha', 'labels.fmt.small': 'pequena', 'labels.fmt.strip': 'tira de prateleira',
     'labels.noQr': 'Gerador de QR não carregado.',
@@ -33,6 +35,7 @@ registerStrings({
     'labels.scan': 'Escanea para ver la ficha', 'labels.scanMachine': 'Escanear: retirar / devolver',
     'labels.machine': 'Máquina', 'labels.nr': 'N.º {code}', 'labels.inv': 'Inv.', 'labels.artNo': 'N.º art.', 'labels.min': 'Stock mín. {qty}',
     'labels.qrOk': 'QR bien legible ({mm} mm por punto).', 'labels.qrSmall': 'QR muy pequeño: elige una etiqueta más grande.',
+    'labels.shortQr': 'Cinta estrecha: el QR solo lleva el código. Léelo con «Escanear» en la app (no con la cámara del móvil).',
     'labels.printHint': 'En la ventana de impresión: impresora «Brother QL-800», márgenes «Ninguno», escala 100 %. Para PDF elige «Guardar como PDF».',
     'labels.fmt.quer': 'horizontal', 'labels.fmt.hoch': 'vertical', 'labels.fmt.endlos': 'continuo, largo a medida', 'labels.fmt.small': 'pequeña', 'labels.fmt.strip': 'tira para estantes',
     'labels.noQr': 'Generador de QR no cargado.',
@@ -46,15 +49,18 @@ const PIN = 'M5 0C2.79 0 1 1.79 1 4c0 3.1 4 6 4 6s4-2.9 4-6c0-2.21-1.79-4-4-4zm0
 const SETTINGS_KEY = 'lgr-labels';
 
 // tape = Rollenbreite, len = Etikettenlänge; rotate = Inhalt liegt quer auf der Rolle
+// shortQr = QR enthält nur den Code (schmales Band; die App liest ihn mit «Scannen»)
 export const LABEL_FORMATS = {
-  dk11209:  { size: '62 × 29 mm', dk: 'DK-11209', note: 'small', tape: 62, len: 29, rotate: false },
   dk11201:  { size: '90 × 29 mm', dk: 'DK-11201', note: 'strip', tape: 29, len: 90, rotate: true },
-  dk11208:  { size: '90 × 38 mm', dk: 'DK-11208', note: '', tape: 38, len: 90, rotate: true },
   dk11202h: { size: '100 × 62 mm', dk: 'DK-11202', note: 'quer', tape: 62, len: 100, rotate: true },
   dk11202v: { size: '62 × 100 mm', dk: 'DK-11202', note: 'hoch', tape: 62, len: 100, rotate: false },
+  cont29:   { size: '29 mm', dk: 'DK-22210', note: 'endlos', tape: 29, len: null, rotate: true },
+  cont12:   { size: '12 mm', dk: 'DK-22214', note: 'endlos', tape: 12, len: null, rotate: true, shortQr: true },
   cont62:   { size: '62 mm', dk: 'DK-22205 / DK-22251', note: 'endlos', tape: 62, len: null, rotate: true },
+  dk11209:  { size: '62 × 29 mm', dk: 'DK-11209', note: 'small', tape: 62, len: 29, rotate: false },
+  dk11208:  { size: '90 × 38 mm', dk: 'DK-11208', note: '', tape: 38, len: 90, rotate: true },
 };
-const DEFAULTS = { format: 'dk11209', contLen: 80, copies: 1, flip: false };
+const DEFAULTS = { format: 'dk11201', contLen: 80, copies: 1, flip: false };
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const clean = (s) => String(s ?? '').replace(/\s+/g, ' ').trim();
 const r3 = (n) => Math.round(n * 1000) / 1000;
@@ -329,7 +335,7 @@ function placeBlocks(res, x, y, w, gap, out) {
 function scanText(item) { return item.kind === 'machine' ? t('labels.scanMachine') : t('labels.scan'); }
 function layoutH(item, W, H, qr, out) {
   const compact = H < 38;
-  const m = compact ? 2 : 3;
+  const m = H < 16 ? 1 : compact ? 2 : 3;
   const colGap = compact ? 1.5 : 3;
   const capS = clamp(H * 0.045, 2.1, 2.9);
   const showCap = !compact && H >= 50 && !!qr;
@@ -375,7 +381,7 @@ function layoutV(item, W, H, qr, out) {
 }
 function buildLabel(item, s) {
   const d = designDims(s);
-  const qr = makeQR(item.qrText || qrUrl(item.code));
+  const qr = makeQR(d.f.shortQr ? item.code : (item.qrText || qrUrl(item.code)));
   const list = [];
   const qrInfo = (d.W >= d.H * 1.15 ? layoutH : layoutV)(item, d.W, d.H, qr, list);
   return { list, W: d.W, H: d.H, qrInfo };
@@ -548,8 +554,10 @@ export async function openLabelDialog(items) {
         pv.innerHTML = `<div style="width:${d.W < d.H ? Math.round(240 * d.W / d.H) + 'px' : '100%'};max-width:460px">${labelPreviewSvg(it, settings)}</div>`;
         el.querySelector('[data-count]').textContent = `${items.length > 1 ? (idx + 1) + ' / ' : ''}${t('labels.count', { n: items.length * (parseInt(settings.copies, 10) || 1) })}`;
         const q = buildLabel(it, settings).qrInfo;
-        el.querySelector('[data-qr]').textContent = q ? (q.dots >= 4 ? t('labels.qrOk', { mm: String(q.mod.toFixed(2)).replace('.', ',') }) : t('labels.qrSmall')) : '';
-        el.querySelector('[data-lenfield]').hidden = settings.format !== 'cont62';
+        const fmt = LABEL_FORMATS[settings.format] || {};
+        el.querySelector('[data-qr]').textContent = q ? [q.dots >= 4 ? t('labels.qrOk', { mm: String(q.mod.toFixed(2)).replace('.', ',') }) : t('labels.qrSmall'),
+          fmt.shortQr ? t('labels.shortQr') : ''].filter(Boolean).join(' ') : '';
+        el.querySelector('[data-lenfield]').hidden = !!fmt.len;
       };
       el.querySelector('#lbl-fmt').addEventListener('change', (e) => { settings = setLabelSettings({ format: e.target.value }); update(); });
       el.querySelector('#lbl-len').addEventListener('input', (e) => { settings = setLabelSettings({ contLen: e.target.value }); update(); });
