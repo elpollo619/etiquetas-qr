@@ -98,6 +98,7 @@ describe('Speicher-Migration und Startdaten', () => {
     for (const x of v1.articles) { delete x.category_id; delete x.product_url; }
     for (const m of v1.machines) for (const k of ['category_id', 'responsible_id', 'is_set', 'product_url']) delete m[k];
     for (const i of v1.inventories) delete i.location_id;
+    delete v1.machine_supplies;   // Bedarf je Maschine gab es damals auch nicht
     storage.setItem(STORAGE_KEY, JSON.stringify(v1));
 
     const b = fresh(storage);
@@ -120,6 +121,8 @@ describe('Speicher-Migration und Startdaten', () => {
     const stored = JSON.parse(storage.getItem(STORAGE_KEY));
     assert.equal(stored.version, 3, 'migrierter Stand gespeichert');
     for (const t of ORG_TABLES) assert.ok(Array.isArray(stored[t]), t);
+    assert.deepEqual(stored.machine_supplies, [], 'Bedarf je Maschine: leere Tabelle ergänzt');
+    assert.deepEqual(await b.listSupplies(), []);
     // erneut laden: keine doppelten Kategorien
     const c = fresh(storage);
     const again = await c.listCategories();
@@ -676,13 +679,20 @@ describe('Regeln im Detail', () => {
     const art = await api.saveArticle({ name: 'Bohrer 6 mm' });
     await api.saveComponent({ set_id: set.id, machine_id: teil.id });
     await api.saveComponent({ set_id: set.id, article_id: art.id, qty: 3 });
+    const bedarf = await api.saveSupply({ machine_id: teil.id, article_id: art.id });   // Bedarf je Maschine: kein Löschschutz
+    const bedarf2 = await api.saveSupply({ machine_id: set.id, article_id: art.id });
     await as(api, 'cristian');
     await rejects(api.deleteMachine(teil.id), 'in_use');
     await rejects(api.deleteArticle(art.id), 'in_use');
+    assert.equal((await api.listSupplies({ articleId: art.id })).length, 2, 'abgelehntes Löschen lässt die Verknüpfungen stehen');
     await api.deleteMachine(set.id);
     assert.deepEqual(await api.listComponents(set.id), []);
+    assert.deepEqual((await api.listSupplies({ articleId: art.id })).map((s) => s.id), [bedarf.id], 'mit der Maschine gelöscht');
     await api.deleteMachine(teil.id);
+    assert.deepEqual(await api.listSupplies({ articleId: art.id }), []);
     await api.deleteArticle(art.id);
+    const gone = (await api.listAudit({ entity: 'machine_supplies', limit: 100000 })).filter((r) => r.action === 'delete').map((r) => r.entity_id);
+    assert.deepEqual(gone.sort(), [bedarf.id, bedarf2.id].sort());
     // Kategorie nur als Vorschlag benutzt → löschbar, Erkennung verliert die Kategorie
     await as(api, 'luca');
     const kat = await api.saveCategory({ name: 'Nur Vorschlag' });

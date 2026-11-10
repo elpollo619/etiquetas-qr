@@ -954,6 +954,213 @@ describe('Einkaufsliste (wie tests/db.test.mjs «einkaufsliste»)', () => {
   });
 });
 
+describe('Bedarf je Maschine (wie tests/db.test.mjs «bedarf je maschine»)', () => {
+  // Spalten von machine_supply_overview (supabase/schema.sql)
+  const SUPPLY_KEYS = ['id', 'machine_id', 'article_id', 'note', 'created_by', 'created_at',
+    'article_code', 'article_name', 'article_unit', 'article_stock', 'article_min_stock', 'article_low_stock', 'article_archived',
+    'article_notes', 'article_location_path', 'article_location_code_path', 'article_photo_path',
+    'machine_code', 'machine_name', 'machine_archived', 'machine_location_path', 'machine_photo_path'].sort();
+  const logOf = async (api, id) => (await api.listAudit({ entity: 'machine_supplies', entityId: id })).map((r) => [r.action, r.user_id]);
+
+  test('Demodaten: beide Akku-Schrauber brauchen die Schrauben; Zeilen wie machine_supply_overview, Filter', async () => {
+    const api = await demo();
+    const [hilti, schlag, sch] = [await M(api, 'M-0002'), await M(api, 'M-0005'), await A(api, 'INV-0003')];
+    const list = await api.listSupplies();
+    assert.equal(list.length, 2);
+    for (const s of list) assert.deepEqual(Object.keys(s).sort(), SUPPLY_KEYS);
+    assert.deepEqual(list.map((s) => [s.machine_id, s.machine_code, s.machine_name, s.machine_archived, s.machine_location_path, s.note, s.created_by]), [
+      [hilti.id, 'M-0002', 'Hilti Akku-Bohrschrauber SF 6H-A22', false, 'Hauptlager / Regal A', 'Bit Torx T20', U.luca],
+      [schlag.id, 'M-0005', 'Makita Akku-Schlagschrauber DTD153', false, 'Lieferwagen 1', null, U.luca],
+    ]);
+    assert.ok(hilti.photo_path, 'Hilti hat ein Demo-Foto');
+    assert.deepEqual(list.map((s) => s.machine_photo_path), [hilti.photo_path, null]);
+    for (const s of list) {
+      assert.deepEqual([s.article_id, s.article_code, s.article_name, s.article_unit, s.article_stock, s.article_min_stock,
+        s.article_low_stock, s.article_archived, s.article_notes, s.article_location_path, s.article_location_code_path, s.article_photo_path],
+      [sch.id, 'INV-0003', 'Schrauben 4×40', 'Stk', 130, 150, true, false, null, 'Hauptlager / Regal A / Fach 02 / Box 03', null, null]);
+      assert.ok(!Number.isNaN(Date.parse(s.created_at)));
+      assert.deepEqual(await logOf(api, s.id), [['insert', U.luca]]);
+    }
+    // Filter: je Maschine, je Artikel, beides; unbekannte oder ungültige ids → leer
+    assert.deepEqual((await api.listSupplies({ machineId: schlag.id })).map((s) => s.id), [list[1].id]);
+    assert.deepEqual((await api.listSupplies({ articleId: sch.id })).map((s) => s.id), list.map((s) => s.id));
+    assert.deepEqual((await api.listSupplies({ machineId: hilti.id, articleId: sch.id })).map((s) => s.id), [list[0].id]);
+    assert.deepEqual(await api.listSupplies({ machineId: hilti.id, articleId: (await A(api, 'INV-0001')).id }), []);
+    assert.deepEqual(await api.listSupplies({ machineId: (await M(api, 'M-0007')).id }), []);
+    assert.deepEqual(await api.listSupplies({ machineId: randomUUID() }), []);
+    assert.deepEqual(await api.listSupplies({ articleId: randomUUID() }), []);
+    assert.deepEqual(await api.listSupplies({ machineId: 'M-0002' }), [], 'kein UUID → leer');
+    assert.deepEqual(await api.listSupplies({ machineId: hilti.id, articleId: 'x' }), []);
+    assert.equal((await api.listSupplies({})).length, 2);
+  });
+
+  test('verknüpfen, Notiz ändern, lösen nur Lagerverantwortliche; kein Doppel; Protokoll', async () => {
+    const api = await demo();
+    const [sauger, bohr, cat, band] = [await M(api, 'M-0007'), await M(api, 'M-0001'), await A(api, 'INV-0001'), await A(api, 'INV-0005')];
+    await as(api, 'daniel');
+    await rejects(api.saveSupply({ machine_id: sauger.id, article_id: cat.id }), 'not_authorized');
+    await rejects(api.saveSupply({ machine_id: randomUUID(), article_id: cat.id }), 'not_authorized');   // RLS vor Fremdschlüssel
+    await as(api, 'luca');
+    await rejects(api.saveSupply(null), 'invalid_value');
+    await rejects(api.saveSupply('x'), 'invalid_value');
+    await rejects(api.saveSupply({ machine_id: 'M-0007', article_id: cat.id }), 'not_found');
+    await rejects(api.saveSupply({ machine_id: sauger.id }), 'not_found');
+    await rejects(api.saveSupply({ machine_id: randomUUID(), article_id: cat.id }), 'not_found');
+    await rejects(api.saveSupply({ machine_id: sauger.id, article_id: randomUUID() }), 'not_found');
+    await rejects(api.saveSupply({ machine_id: sauger.id, article_id: cat.id, note: 'x'.repeat(301) }), 'invalid_value');
+    assert.equal((await api.listSupplies()).length, 2, 'nichts gespeichert');
+
+    // Notiz getrimmt; Ersteller ist immer die handelnde Person
+    const row = await api.saveSupply({ machine_id: sauger.id, article_id: cat.id, note: '  Typ GN ', created_by: U.daniel });
+    assert.deepEqual(Object.keys(row).sort(), SUPPLY_KEYS);
+    assert.deepEqual([row.machine_id, row.article_id, row.note, row.created_by, row.article_code, row.machine_code, row.article_stock, row.article_low_stock],
+      [sauger.id, cat.id, 'Typ GN', U.luca, 'INV-0001', 'M-0007', 13, false]);
+    await rejects(api.saveSupply({ machine_id: sauger.id, article_id: cat.id }), 'duplicate', 'supply');
+    await rejects(api.saveSupply({ machine_id: sauger.id, article_id: cat.id, note: 'anders' }), 'duplicate', 'supply');
+    // dieselbe Maschine mit anderem Artikel und derselbe Artikel an anderer Maschine sind erlaubt; leere Notiz → null
+    const b = await api.saveSupply({ machine_id: sauger.id, article_id: band.id });
+    const c = await api.saveSupply({ machine_id: bohr.id, article_id: cat.id, note: '   ' });
+    assert.deepEqual([b.note, c.note], [null, null]);
+    assert.deepEqual((await api.listSupplies({ machineId: sauger.id })).map((s) => s.article_name), ['CAT 6 Slim UTP Patchkabel', 'Isolierband']);
+    assert.deepEqual((await api.listSupplies({ articleId: cat.id })).map((s) => s.machine_code), ['M-0001', 'M-0007']);
+
+    // ändern: nur die Notiz (Maschine/Artikel bleiben), höchstens 300 Zeichen, leer → null
+    const upd = await api.saveSupply({ id: row.id, note: 'x'.repeat(300), machine_id: bohr.id, article_id: band.id });
+    assert.deepEqual([upd.id, upd.note.length, upd.machine_id, upd.article_id], [row.id, 300, sauger.id, cat.id]);
+    await rejects(api.saveSupply({ id: row.id, note: 'x'.repeat(301) }), 'invalid_value');
+    assert.equal((await api.saveSupply({ id: row.id, note: '' })).note, null);
+    assert.equal((await api.saveSupply({ id: row.id, note: null })).note, null);   // unverändert: kein Protokolleintrag
+    assert.equal((await api.saveSupply({ id: row.id })).id, row.id, 'ohne note: Zeile unverändert zurück');
+    await rejects(api.saveSupply({ id: randomUUID(), note: 'x' }), 'not_found');
+    await rejects(api.saveSupply({ id: 'x', note: 'x' }), 'not_found');
+
+    // Mitarbeiter: sieht den Bedarf, ändert und löst nichts
+    await as(api, 'daniel');
+    assert.deepEqual((await api.listSupplies({ machineId: sauger.id })).map((s) => s.id).sort(), [row.id, b.id].sort());
+    await rejects(api.saveSupply({ id: row.id, note: 'x' }), 'not_authorized');
+    await rejects(api.deleteSupply(row.id), 'not_authorized');
+    assert.equal((await api.saveSupply({ id: row.id })).note, null);
+    // nicht freigegeben: sieht nichts (für sie gibt es die Zeile nicht)
+    await as(api, 'ana');
+    assert.deepEqual(await api.listSupplies(), []);
+    assert.deepEqual(await api.listSupplies({ machineId: sauger.id }), []);
+    await rejects(api.saveSupply({ machine_id: bohr.id, article_id: band.id }), 'not_authorized');
+    await rejects(api.saveSupply({ id: row.id, note: 'x' }), 'not_found');
+    await rejects(api.saveSupply({ id: row.id }), 'not_found');
+    await rejects(api.deleteSupply(row.id), 'not_found');
+
+    // lösen
+    await as(api, 'luca');
+    await rejects(api.deleteSupply('x'), 'not_found');
+    await rejects(api.deleteSupply(randomUUID()), 'not_found');
+    assert.equal(await api.deleteSupply(row.id), undefined);
+    await rejects(api.deleteSupply(row.id), 'not_found');
+    assert.deepEqual((await api.listSupplies({ machineId: sauger.id })).map((s) => s.id), [b.id]);
+    const again = await api.saveSupply({ machine_id: sauger.id, article_id: cat.id });   // danach wieder verknüpfbar
+    assert.notEqual(again.id, row.id);
+
+    const log = await api.listAudit({ entity: 'machine_supplies', entityId: row.id });
+    assert.deepEqual(log.map((r) => [r.action, r.user_id]), [['delete', U.luca], ['update', U.luca], ['update', U.luca], ['insert', U.luca]]);
+    assert.deepEqual(log[3].details, { id: row.id, machine_id: sauger.id, article_id: cat.id, note: 'Typ GN', created_by: U.luca });
+    assert.deepEqual(log[2].details, { note: { alt: 'Typ GN', neu: 'x'.repeat(300) } });
+    assert.deepEqual(log[1].details, { note: { alt: 'x'.repeat(300), neu: null } });
+    assert.deepEqual([log[0].details.id, log[0].details.note, log[0].details.created_by], [row.id, null, U.luca]);
+
+    await api.signOut();
+    await rejects(api.listSupplies(), 'not_authorized');
+    await rejects(api.saveSupply({ machine_id: bohr.id, article_id: band.id }), 'not_authorized');
+    await rejects(api.saveSupply({ id: b.id, note: 'x' }), 'not_authorized');
+    await rejects(api.deleteSupply(b.id), 'not_authorized');
+  });
+
+  test('Maschine oder Artikel löschen nimmt die Verknüpfungen mit (on delete cascade, protokolliert)', async () => {
+    const storage = new MemoryStorage();
+    const api = fresh(storage);
+    await api.init();
+    await as(api, 'luca');
+    const sauger = await api.saveMachine({ name: 'Staubsauger Büro' });
+    const drucker = await api.saveMachine({ name: 'Drucker Empfang' });
+    const beutel = await api.saveArticle({ name: 'Staubsaugerbeutel', unit: 'Stk' });   // Bestand 0 → keine Bewegung, löschbar
+    const toner = await api.saveArticle({ name: 'Toner schwarz', unit: 'Stk' });
+    const s1 = await api.saveSupply({ machine_id: sauger.id, article_id: beutel.id });
+    const s2 = await api.saveSupply({ machine_id: drucker.id, article_id: toner.id });
+    const s3 = await api.saveSupply({ machine_id: drucker.id, article_id: beutel.id });
+    await rejects(api.deleteMachine(drucker.id), 'not_authorized');   // löschen nur Admin; die Verknüpfungen bleiben
+    assert.equal((await api.listSupplies({ machineId: drucker.id })).length, 2);
+
+    await as(api, 'cristian');
+    await api.deleteMachine(drucker.id);
+    assert.deepEqual(await api.listSupplies({ machineId: drucker.id }), []);
+    assert.deepEqual((await api.listSupplies({ articleId: beutel.id })).map((s) => s.id), [s1.id]);
+    assert.deepEqual(await api.listSupplies({ articleId: toner.id }), []);
+    assert.ok(await api.getArticle(toner.id), 'der Artikel bleibt');
+    await api.deleteArticle(beutel.id);
+    assert.deepEqual(await api.listSupplies({ machineId: sauger.id }), []);
+    assert.ok(await api.getMachine(sauger.id), 'die Maschine bleibt');
+    for (const s of [s1, s2, s3]) assert.deepEqual(await logOf(api, s.id), [['delete', U.cristian], ['insert', U.luca]]);
+    assert.equal((await api.listSupplies()).length, 2, 'die Verknüpfungen der Demodaten bleiben');
+    assert.equal(JSON.parse(storage.getItem(STORAGE_KEY)).machine_supplies.length, 2);
+  });
+
+  test('Reihenfolge Artikelname, Maschinenname, id; Bestand und Archiv-Kennzeichen kommen aus den Übersichten', async () => {
+    const api = await demo();
+    await as(api, 'luca');
+    const regalB = await L(api, 'L-0005');
+    const beta = await api.saveMachine({ name: 'Zz Beta', home_location_id: regalB.id });
+    const alpha = await api.saveMachine({ name: 'Zz Alpha' });
+    const filter = await api.saveArticle({ name: 'Zz Filter', unit: 'Stk', stock: 3, min_stock: 2, notes: 'Typ HEPA 13', location_id: regalB.id });
+    const beutel = await api.saveArticle({ name: 'Zz Beutel', unit: 'Pkg' });
+    const beutel2 = await api.saveArticle({ name: 'Zz Beutel', unit: 'Pkg' });   // gleicher Name: Reihenfolge nach id
+    const link = async (m, a) => (await api.saveSupply({ machine_id: m.id, article_id: a.id })).id;
+    const fB = await link(beta, filter);
+    const fA = await link(alpha, filter);
+    const bB = await link(beta, beutel);
+    const t1 = await link(alpha, beutel2);
+    const t2 = await link(alpha, beutel);
+    const all = await api.listSupplies();
+    assert.deepEqual(all.slice(0, 2).map((s) => s.article_name), ['Schrauben 4×40', 'Schrauben 4×40']);
+    assert.deepEqual(all.slice(2).map((s) => s.id), [...[t1, t2].sort(), bB, fA, fB]);
+    assert.deepEqual((await api.listSupplies({ machineId: alpha.id })).map((s) => s.id), [...[t1, t2].sort(), fA]);
+
+    const one = async () => (await api.listSupplies({ machineId: beta.id, articleId: filter.id }))[0];
+    let row = await one();
+    assert.deepEqual([row.article_stock, row.article_min_stock, row.article_low_stock, row.article_notes, row.article_unit,
+      row.article_location_path, row.machine_location_path, row.article_archived, row.machine_archived],
+    [3, 2, false, 'Typ HEPA 13', 'Stk', 'Hauptlager / Regal B', 'Hauptlager / Regal B', false, false]);
+    await api.moveStock(filter.id, { type: 'entnahme', qty: 1 });   // «−1» auf der Maschinenkarte
+    await api.saveArticle({ id: filter.id, archived: true });
+    await api.saveMachine({ id: beta.id, archived: true });
+    row = await one();
+    assert.deepEqual([row.article_stock, row.article_low_stock, row.article_archived, row.machine_archived], [2, true, true, true]);
+  });
+
+  test('gespeicherter Stand ohne machine_supplies wird ohne Verlust ergänzt (Version bleibt 3)', async () => {
+    const storage = new MemoryStorage();
+    const a = fresh(storage);
+    await a.init();
+    const before = (await a.listMachines({ includeArchived: true })).map((m) => [m.code, m.status]);
+    const old = JSON.parse(storage.getItem(STORAGE_KEY));
+    assert.deepEqual([old.version, old.machine_supplies.length], [3, 2]);
+    delete old.machine_supplies;
+    storage.setItem(STORAGE_KEY, JSON.stringify(old));
+
+    const b = fresh(storage);
+    assert.deepEqual(await b.listSupplies(), [], 'leere Tabelle, keine Demodaten nachträglich');
+    assert.deepEqual((await b.listMachines({ includeArchived: true })).map((m) => [m.code, m.status]), before);
+    // weiterarbeiten: verknüpfen und Maschine löschen funktionieren, Version bleibt 3
+    await as(b, 'luca');
+    const m = await b.saveMachine({ name: 'Etikettendrucker' });
+    const row = await b.saveSupply({ machine_id: m.id, article_id: (await A(b, 'INV-0004')).id, note: 'für Kabelbeschriftung' });
+    assert.deepEqual((await b.listSupplies()).map((s) => s.id), [row.id]);
+    let stored = JSON.parse(storage.getItem(STORAGE_KEY));
+    assert.deepEqual([stored.version, stored.machine_supplies.length], [3, 1]);
+    await as(b, 'cristian');
+    await b.deleteMachine(m.id);
+    stored = JSON.parse(storage.getItem(STORAGE_KEY));
+    assert.deepEqual([stored.version, stored.machine_supplies], [3, []]);
+  });
+});
+
 // =============================================================================================
 //  Teil 2: Supabase-Implementierung mit Ersatz-Client
 // =============================================================================================
