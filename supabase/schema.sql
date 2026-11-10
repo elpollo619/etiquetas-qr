@@ -535,6 +535,19 @@ create table if not exists public.org_tasks (
 );
 create index if not exists org_tasks_location_idx on public.org_tasks (location_id, status);
 
+-- Bedarf einer Maschine: welches Verbrauchsmaterial/Zubehör (Artikel) ein Gerät braucht – Staubsaugerbeutel, Toner,
+-- Sägeblätter … Auf der Maschinenkarte sieht man so Bestand und «−1»; der Artikel zeigt, wofür er gebraucht wird.
+create table if not exists public.machine_supplies (
+  id          uuid primary key default gen_random_uuid(),
+  machine_id  uuid not null references public.machines(id) on delete cascade,
+  article_id  uuid not null references public.articles(id) on delete cascade,
+  note        text check (note is null or length(note) <= 300),
+  created_by  uuid references public.profiles(id),
+  created_at  timestamptz not null default now(),
+  constraint machine_supplies_pair_uniq unique (machine_id, article_id)
+);
+create index if not exists machine_supplies_article_idx on public.machine_supplies (article_id);
+
 -- Einkaufsliste: was gekauft werden muss (Papier, Toner, Stifte …). Bewusst KEIN Einkaufs-/Bestellmodul:
 -- keine Lieferanten, Preise, Bestellungen oder Rechnungen – nur «was, wie viel, wer hat es besorgt».
 -- Artikel mit Mindestbestand kommen automatisch auf die Liste, sobald eine Entnahme sie darunter bringt
@@ -869,6 +882,11 @@ drop trigger if exists sites_updated on public.sites;
 create trigger sites_updated before update on public.sites for each row execute function public.set_updated_at();
 drop trigger if exists sites_audit on public.sites;
 create trigger sites_audit after insert or update or delete on public.sites for each row execute function public.audit_row();
+
+drop trigger if exists machine_supplies_created_by on public.machine_supplies;
+create trigger machine_supplies_created_by before insert on public.machine_supplies for each row execute function public.set_created_by();
+drop trigger if exists machine_supplies_audit on public.machine_supplies;
+create trigger machine_supplies_audit after insert or update or delete on public.machine_supplies for each row execute function public.audit_row();
 
 -- Einkaufsliste: Name/Einheit vom Artikel, Zeitstempel je Status (wer hat bestellt / besorgt)
 create or replace function public.shopping_item_defaults() returns trigger
@@ -1719,7 +1737,7 @@ end $$;
 -- =====================================================================
 --  Ansichten (respektieren die Zugriffsregeln des angemeldeten Benutzers)
 -- =====================================================================
-drop view if exists public.article_consumption, public.shopping_overview, public.site_overview, public.floor_plan_overview,
+drop view if exists public.machine_supply_overview, public.article_consumption, public.shopping_overview, public.site_overview, public.floor_plan_overview,
                     public.org_stats, public.space_overview, public.org_task_overview, public.detection_overview,
                     public.photo_overview, public.category_paths,
                     public.movement_overview, public.loan_overview, public.article_overview,
@@ -1911,6 +1929,18 @@ select s.*,
   left join public.profiles cu on cu.id = s.created_by
   left join public.profiles ou on ou.id = s.ordered_by
   left join public.profiles du on du.id = s.done_by;
+
+create view public.machine_supply_overview with (security_invoker = true) as
+select s.*,
+       a.code as article_code, a.name as article_name, a.unit as article_unit, a.stock as article_stock,
+       a.min_stock as article_min_stock, a.low_stock as article_low_stock, a.archived as article_archived,
+       a.notes as article_notes, a.location_path as article_location_path,
+       a.location_code_path as article_location_code_path, a.photo_path as article_photo_path,
+       m.code as machine_code, m.name as machine_name, m.archived as machine_archived,
+       m.location_path as machine_location_path, m.photo_path as machine_photo_path
+  from public.machine_supplies s
+  join public.article_overview a on a.id = s.article_id
+  join public.machine_overview m on m.id = s.machine_id;
 
 -- Verbrauch je Artikel (Entnahmen der letzten 90 Tage) – Grundlage für «reicht noch ca. …» (Schätzung in der App)
 create view public.article_consumption with (security_invoker = true) as
@@ -2218,6 +2248,22 @@ drop policy if exists sites_update on public.sites;
 create policy sites_update on public.sites for update to authenticated using ((select public.is_staff())) with check ((select public.is_staff()));
 drop policy if exists sites_delete on public.sites;
 create policy sites_delete on public.sites for delete to authenticated using ((select public.is_admin()));
+
+-- Bedarf je Maschine: lesen alle aktiven; verknüpfen/lösen nur Lagerverantwortliche und Admins
+alter table public.machine_supplies enable row level security;
+revoke insert, update, delete on public.machine_supplies from authenticated;
+grant insert (machine_id, article_id, note) on public.machine_supplies to authenticated;
+grant update (note) on public.machine_supplies to authenticated;
+grant delete on public.machine_supplies to authenticated;
+drop policy if exists machine_supplies_read on public.machine_supplies;
+create policy machine_supplies_read on public.machine_supplies for select to authenticated using ((select public.is_active_user()));
+drop policy if exists machine_supplies_insert on public.machine_supplies;
+create policy machine_supplies_insert on public.machine_supplies for insert to authenticated with check ((select public.is_staff()));
+drop policy if exists machine_supplies_update on public.machine_supplies;
+create policy machine_supplies_update on public.machine_supplies for update to authenticated
+  using ((select public.is_staff())) with check ((select public.is_staff()));
+drop policy if exists machine_supplies_delete on public.machine_supplies;
+create policy machine_supplies_delete on public.machine_supplies for delete to authenticated using ((select public.is_staff()));
 
 -- Einkaufsliste: gemeinsame Liste – alle aktiven Mitarbeiter dürfen eintragen und abhaken;
 -- löschen nur der eigene Eintrag oder Lagerverantwortliche/Admins (sonst «verworfen», bleibt im Protokoll)

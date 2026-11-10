@@ -271,6 +271,7 @@ export function createApi({ LgrError, client } = {}) {
         if (/_code_key$/.test(cn) || /\(code\)/.test(details)) return E('duplicate_code');
         if (/one_open_per_machine/.test(cn)) return E('not_available', 'ausgeliehen');
         if (/shopping_items_open_article/.test(cn)) return E('already_on_list');
+        if (/machine_supplies_pair/.test(cn)) return E('duplicate', 'supply');
         if (/short_code/.test(cn)) return E('duplicate_short_code');
         if (/categories_name/.test(cn)) return E('duplicate', 'category');
         return E('duplicate', cn || null);
@@ -1106,6 +1107,43 @@ export function createApi({ LgrError, client } = {}) {
       if (!isUuid(id)) throw E('not_found');
       const rows = await q(sb.from('sites').delete().eq('id', id).select('id'));
       if (!rows || !rows.length) throw await zeroRowsError('sites', id);
+    }),
+
+    // ---- Bedarf je Maschine (Verbrauchsmaterial/Zubehör, das ein Gerät braucht) ----
+    listSupplies: wrap(async ({ machineId, articleId } = {}) => {
+      if (machineId && !isUuid(machineId)) return [];
+      if (articleId && !isUuid(articleId)) return [];
+      return fetchAll(() => {
+        let qb = sb.from('machine_supply_overview').select('*');
+        if (machineId) qb = qb.eq('machine_id', machineId);
+        if (articleId) qb = qb.eq('article_id', articleId);
+        return qb.order('article_name').order('machine_name').order('id');
+      });
+    }),
+    saveSupply: wrap(async (obj) => {
+      if (!obj || typeof obj !== 'object') throw E('invalid_value');
+      const note = has(obj, 'note') ? trimOrNull(obj.note) : undefined;
+      if (note && note.length > 300) throw E('invalid_value');
+      let id = obj.id;
+      if (!id) {
+        if (!isUuid(obj.machine_id) || !isUuid(obj.article_id)) throw E('not_found');
+        id = (await q(sb.from('machine_supplies').insert({ machine_id: obj.machine_id, article_id: obj.article_id, note: note ?? null })
+          .select('id').single())).id;
+      } else {
+        if (!isUuid(id)) throw E('not_found');
+        if (note !== undefined) {
+          const rows = await q(sb.from('machine_supplies').update({ note }).eq('id', id).select('id'));
+          if (!rows || !rows.length) throw await zeroRowsError('machine_supplies', id);
+        }
+      }
+      const out = await getOne('machine_supply_overview', 'id', id);
+      if (!out) throw E('not_found');
+      return out;
+    }),
+    deleteSupply: wrap(async (id) => {
+      if (!isUuid(id)) throw E('not_found');
+      const rows = await q(sb.from('machine_supplies').delete().eq('id', id).select('id'));
+      if (!rows || !rows.length) throw await zeroRowsError('machine_supplies', id);
     }),
 
     // ---- Einkaufsliste (was gekauft werden muss; kein Bestellmodul) ----

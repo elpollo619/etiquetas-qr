@@ -86,24 +86,35 @@ function captureDeepLink() {
 function navItems() {
   const staff = can(me, 'staff');
   return [
-    { path: '', ic: 'home', label: t('nav.home') },
-    { path: 'scan', ic: 'scan', label: t('nav.scan'), scan: true },
-    { path: 'suche', ic: 'search', label: t('nav.search') },
-    { path: 'organisieren', ic: 'sparkle', label: t('nav.organize') },
-    { path: 'maschinen', ic: 'machine', label: t('nav.machines') },
-    { path: 'ausgeliehen', ic: 'handoff', label: t('nav.loans') },
-    { path: 'artikel', ic: 'box', label: t('nav.articles') },
-    { path: 'verbrauch', ic: 'list', label: t('nav.consumables') },
-    { path: 'einkauf', ic: 'cart', label: t('nav.shopping') },
-    staff && { path: 'einraeumen', ic: 'move', label: t('nav.putaway') },
-    { path: 'lagerorte', ic: 'location', label: t('nav.locations') },
-    { path: 'inventur', ic: 'clipboard', label: t('nav.inventory') },
-    { path: 'kategorien', ic: 'layers', label: t('nav.categories') },
-    { path: 'mitarbeiter', ic: 'users', label: t('nav.employees') },
-    staff && { path: 'etiketten', ic: 'label', label: t('nav.labels') },
-    staff && { path: 'protokoll', ic: 'history', label: t('nav.audit') },
-    { path: 'profil', ic: 'user', label: t('nav.profile') },
+    // Alltag: das braucht jeder
+    { path: '', ic: 'home', label: t('nav.home'), group: 'daily' },
+    { path: 'scan', ic: 'scan', label: t('nav.scan'), scan: true, group: 'daily' },
+    { path: 'suche', ic: 'search', label: t('nav.search'), group: 'daily' },
+    { path: 'verbrauch', ic: 'list', label: t('nav.consumables'), group: 'daily' },
+    { path: 'einkauf', ic: 'cart', label: t('nav.shopping'), group: 'daily' },
+    { path: 'ausgeliehen', ic: 'handoff', label: t('nav.loans'), group: 'daily' },
+    // Verwalten: Bestand pflegen und ordnen
+    { path: 'maschinen', ic: 'machine', label: t('nav.machines'), group: 'manage' },
+    { path: 'artikel', ic: 'box', label: t('nav.articles'), group: 'manage' },
+    { path: 'lagerorte', ic: 'location', label: t('nav.locations'), group: 'manage' },
+    { path: 'organisieren', ic: 'sparkle', label: t('nav.organize'), group: 'manage' },
+    staff && { path: 'einraeumen', ic: 'move', label: t('nav.putaway'), group: 'manage' },
+    { path: 'inventur', ic: 'clipboard', label: t('nav.inventory'), group: 'manage' },
+    staff && { path: 'etiketten', ic: 'label', label: t('nav.labels'), group: 'manage' },
+    { path: 'kategorien', ic: 'layers', label: t('nav.categories'), group: 'manage' },
+    { path: 'mitarbeiter', ic: 'users', label: t('nav.employees'), group: 'manage' },
+    staff && { path: 'protokoll', ic: 'history', label: t('nav.audit'), group: 'manage' },
+    { path: 'profil', ic: 'user', label: t('nav.profile'), group: 'manage' },
   ].filter(Boolean);
+}
+// Menüeinträge mit Zwischentitel je Gruppe («Alltag», «Verwalten»)
+function navGroupsHtml(items, linkHtml) {
+  let out = '', last = null;
+  for (const n of items) {
+    if (n.group !== last) { out += `<div class="nav-group">${esc(t('nav.group.' + n.group))}</div>`; last = n.group; }
+    out += linkHtml(n);
+  }
+  return out;
 }
 function sectionOf(path) {
   const first = path.split('/')[0];
@@ -136,15 +147,15 @@ function renderShell() {
       </header>
       <div class="layout">
         <nav class="sidebar" aria-label="${esc(t('nav.menu'))}">
-          ${items.map((n) => `<a href="#/${n.path}" data-sec="${n.path}" class="${n.scan ? 'side-scan' : ''}">${icon(n.ic)}<span>${esc(n.label)}</span></a>`).join('')}
+          ${navGroupsHtml(items, (n) => `<a href="#/${n.path}" data-sec="${n.path}" class="${n.scan ? 'side-scan' : ''}">${icon(n.ic)}<span>${esc(n.label)}</span></a>`)}
         </nav>
         <main id="view" tabindex="-1"></main>
       </div>
       <nav class="bottom-nav" aria-label="${esc(t('nav.menu'))}">
         <a href="#/" data-sec="">${icon('home')}<span>${esc(t('nav.home'))}</span></a>
-        <a href="#/maschinen" data-sec="maschinen">${icon('machine')}<span>${esc(t('nav.machines'))}</span></a>
+        <a href="#/suche" data-sec="suche">${icon('search')}<span>${esc(t('nav.search'))}</span></a>
         <a href="#/scan" data-sec="scan" class="scan-item" aria-label="${esc(t('nav.scan'))}"><span class="scan-fab">${icon('scan')}</span></a>
-        <a href="#/artikel" data-sec="artikel">${icon('box')}<span>${esc(t('nav.articles'))}</span></a>
+        <a href="#/verbrauch" data-sec="verbrauch">${icon('list')}<span>${esc(t('nav.material'))}</span></a>
         <button type="button" id="btnMore" aria-expanded="false">${icon('more')}<span>${esc(t('nav.more'))}</span></button>
       </nav>
     </div>`;
@@ -165,11 +176,11 @@ async function fillDemoUsers() {
 function openMoreMenu() {
   const btn = document.getElementById('btnMore');
   btn.setAttribute('aria-expanded', 'true');
-  const hidden = new Set(['', 'scan', 'maschinen', 'artikel']);
+  const hidden = new Set(['', 'scan', 'suche', 'verbrauch']);
   const links = navItems().filter((n) => !hidden.has(n.path));
   sheet({
     title: t('nav.more'),
-    body: `<nav class="more-menu">${links.map((n) => `<a href="#/${n.path}">${icon(n.ic)}<span>${esc(n.label)}</span></a>`).join('')}</nav>
+    body: `<nav class="more-menu">${navGroupsHtml(links, (n) => `<a href="#/${n.path}">${icon(n.ic)}<span>${esc(n.label)}</span></a>`)}</nav>
       <div class="row"><span class="muted small">${esc(t('lang.label'))}</span>${langSwitchHtml()}</div>`,
     onOpen: (el, close) => {
       el.querySelectorAll('.more-menu a').forEach((a) => a.addEventListener('click', () => close()));

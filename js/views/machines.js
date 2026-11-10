@@ -6,6 +6,7 @@ import {
   confirmSheet, openLightbox, thumbHtml, hydrateThumbs, downloadCsv, formData, toLocalInput, fromLocalInput, icon, numOrNull,
 } from '../util.js';
 import { categoryOptionsHtml, categorySubtreeIds, confidencePill, sourceLabel } from '../org-common.js';
+import { mountSupplies } from '../supplies.js';
 
 // ---------------------------------------------------------------------------
 // Texte (de-CH ohne Eszett, pt-PT, es)
@@ -1142,6 +1143,7 @@ function renderMachineCard(ctx, root, m, mods) {
       <h2 id="mc-det-photos-h">${esc(t('machines.det.title'))}</h2>
       <div data-det-body></div>
     </section>
+    <div data-supplies hidden></div>
     <div class="stack" data-media></div>
     ${manageHtml}`;
 
@@ -1208,6 +1210,9 @@ function renderMachineCard(ctx, root, m, mods) {
       }
     })();
   }
+
+  // Bedarf: Verbrauchsmaterial/Zubehör dieses Geräts
+  mountSupplies(root.querySelector('[data-supplies]'), ctx, m);
 
   // Fotos und Dokumente (Schadenfotos erscheinen in der Galerie)
   const mediaEl = root.querySelector('[data-media]');

@@ -625,6 +625,22 @@ test('einkaufsliste: automatisch unter Mindestbestand, einmal je Artikel, Zugang
   await as(U.lv, `update public.articles set archived = true where id = any($1)`, [[art.id, quiet.id]]);
 });
 
+test('bedarf je maschine: verknüpfen nur Lagerverantwortliche, kein Doppel, Ansicht mit Bestand', async () => {
+  await fails(as(U.a, `insert into public.machine_supplies (machine_id, article_id) values ($1, $2)`, [S.m3, S.art]), RLS);
+  const row = await one(U.lv, `insert into public.machine_supplies (machine_id, article_id, note) values ($1, $2, 'Typ GN') returning *`, [S.m3, S.art]);
+  assert.equal(row.created_by, U.lv);
+  await fails(as(U.lv, `insert into public.machine_supplies (machine_id, article_id) values ($1, $2)`, [S.m3, S.art]), /machine_supplies_pair_uniq/);
+  const v = await one(U.a, `select * from public.machine_supply_overview where id = $1`, [row.id]);
+  assert.deepEqual([v.article_code, v.note, typeof v.machine_code, v.article_low_stock], ['INV-0001', 'Typ GN', 'string', true]);
+  assert.equal((await as(U.x, `select * from public.machine_supplies`)).rows.length, 0, 'inaktiv sieht nichts');
+  const upd = await as(U.a, `update public.machine_supplies set note = 'x' where id = $1`, [row.id]);
+  assert.equal(upd.affectedRows, 0, 'Mitarbeiter ändert nichts');
+  const audit = await su(`select count(*)::int n from public.audit_log where entity = 'machine_supplies' and entity_id = $1`, [row.id]);
+  assert.equal(audit.rows[0].n, 1);
+  const del = await as(U.lv, `delete from public.machine_supplies where id = $1`, [row.id]);
+  assert.equal(del.affectedRows, 1);
+});
+
 // ---------------------------------------------------------------------------------------------------
 //  Korrektur von Ausleihen
 // ---------------------------------------------------------------------------------------------------

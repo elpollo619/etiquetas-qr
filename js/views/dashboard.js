@@ -1,6 +1,7 @@
 // Übersicht (Startseite): eigene Ausleihen, Kennzahlen, Schnellzugriff, Listen und Aktivität
 import { t, registerStrings, fmtDate, fmtDateTime, fmtElapsed, fmtNum, fmtQty } from '../i18n.js';
 import { esc, can, icon, errorText, toast, routeForCode, conditionLabel } from '../util.js';
+import { isUncounted } from '../consumption.js';
 
 registerStrings({
   de: {
@@ -14,7 +15,13 @@ registerStrings({
     'dashboard.dueOn': 'Rückgabe bis {d}',
     'dashboard.overdueSince': 'überfällig seit {t}',
     'dashboard.figures': 'Zahlen',
-    'dashboard.shortcuts': 'Schnellzugriff',
+    'dashboard.shortcuts': 'Schnellzugriff', 'dashboard.more': 'Kennzahlen und Verlauf',
+    'dashboard.act.scan': 'Scannen', 'dashboard.act.scanSub': 'QR-Etikett lesen',
+    'dashboard.act.search': 'Suchen', 'dashboard.act.searchSub': 'Wo ist was?',
+    'dashboard.act.take': 'Material nehmen', 'dashboard.act.takeSub': 'Papier, Stifte, Beutel …',
+    'dashboard.act.shop': 'Einkaufsliste', 'dashboard.act.shopOpen': '{n} zu besorgen', 'dashboard.act.shopNone': 'nichts offen',
+    'dashboard.act.put': 'Einräumen', 'dashboard.act.putSub': 'an den richtigen Ort',
+    'dashboard.act.loans': 'Ausgeliehen', 'dashboard.act.loansSub': 'Geräte zurückgeben',
     'dashboard.statArticles': 'Artikel total',
     'dashboard.statMachines': 'Maschinen total',
     'dashboard.statAvailable': 'Verfügbar',
@@ -90,7 +97,13 @@ registerStrings({
     'dashboard.dueOn': 'Devolver até {d}',
     'dashboard.overdueSince': 'em atraso há {t}',
     'dashboard.figures': 'Números',
-    'dashboard.shortcuts': 'Acesso rápido',
+    'dashboard.shortcuts': 'Acesso rápido', 'dashboard.more': 'Números e histórico',
+    'dashboard.act.scan': 'Ler código', 'dashboard.act.scanSub': 'ler a etiqueta QR',
+    'dashboard.act.search': 'Procurar', 'dashboard.act.searchSub': 'Onde está o quê?',
+    'dashboard.act.take': 'Tirar material', 'dashboard.act.takeSub': 'papel, canetas, sacos …',
+    'dashboard.act.shop': 'Lista de compras', 'dashboard.act.shopOpen': '{n} para comprar', 'dashboard.act.shopNone': 'nada em aberto',
+    'dashboard.act.put': 'Arrumar', 'dashboard.act.putSub': 'no sítio certo',
+    'dashboard.act.loans': 'Emprestado', 'dashboard.act.loansSub': 'devolver aparelhos',
     'dashboard.statArticles': 'Total de artigos',
     'dashboard.statMachines': 'Total de máquinas',
     'dashboard.statAvailable': 'Disponíveis',
@@ -166,7 +179,13 @@ registerStrings({
     'dashboard.dueOn': 'Devolver antes del {d}',
     'dashboard.overdueSince': 'con retraso desde hace {t}',
     'dashboard.figures': 'Cifras',
-    'dashboard.shortcuts': 'Accesos rápidos',
+    'dashboard.shortcuts': 'Accesos rápidos', 'dashboard.more': 'Cifras e historial',
+    'dashboard.act.scan': 'Escanear', 'dashboard.act.scanSub': 'leer la etiqueta QR',
+    'dashboard.act.search': 'Buscar', 'dashboard.act.searchSub': '¿Dónde está cada cosa?',
+    'dashboard.act.take': 'Coger material', 'dashboard.act.takeSub': 'papel, bolígrafos, bolsas …',
+    'dashboard.act.shop': 'Lista de compras', 'dashboard.act.shopOpen': '{n} por comprar', 'dashboard.act.shopNone': 'nada pendiente',
+    'dashboard.act.put': 'Guardar', 'dashboard.act.putSub': 'en su sitio',
+    'dashboard.act.loans': 'Prestado', 'dashboard.act.loansSub': 'devolver aparatos',
     'dashboard.statArticles': 'Artículos en total',
     'dashboard.statMachines': 'Máquinas en total',
     'dashboard.statAvailable': 'Disponibles',
@@ -320,7 +339,7 @@ function statsHtml({ machines, articles, openLoans, org }) {
   const sets = has ? n0(org.sets_total) : machines.filter((m) => m.is_set).length;
   const noLoc = has ? n0(org.items_without_location)
     : articles.filter((a) => !a.location_id).length + machines.filter((m) => !m.home_location_id).length;
-  const low = articles.filter((a) => a.low_stock).length;
+  const low = articles.filter((a) => a.low_stock && !isUncounted(a)).length;
   const loaned = has ? n0(org.loans_open) : cnt('ausgeliehen');
   const overdue = has ? n0(org.loans_overdue) : openLoans.filter((l) => l.overdue).length;
   const stock = [
@@ -381,6 +400,26 @@ function quickHtml(org) {
   </div>`;
 }
 
+// Die fünf häufigsten Handgriffe als grosse Kacheln – alles Weitere steht im Menü bzw. unter «Kennzahlen und Verlauf».
+function actionsHtml(user, org) {
+  const staff = can(user, 'staff');
+  const open = org ? n0(org.shopping_open) : 0;
+  const items = [
+    { href: '#/scan', ic: 'scan', label: t('dashboard.act.scan'), sub: t('dashboard.act.scanSub'), cls: 'primary' },
+    { href: '#/suche', ic: 'search', label: t('dashboard.act.search'), sub: t('dashboard.act.searchSub') },
+    { href: '#/verbrauch', ic: 'list', label: t('dashboard.act.take'), sub: t('dashboard.act.takeSub') },
+    { href: '#/einkauf', ic: 'cart', label: t('dashboard.act.shop'),
+      sub: open ? t('dashboard.act.shopOpen', { n: fmtNum(open) }) : t('dashboard.act.shopNone'), badge: open || 0 },
+    staff ? { href: '#/einraeumen', ic: 'move', label: t('dashboard.act.put'), sub: t('dashboard.act.putSub') }
+      : { href: '#/ausgeliehen', ic: 'handoff', label: t('dashboard.act.loans'), sub: t('dashboard.act.loansSub') },
+  ];
+  return `<nav class="dash-actions" aria-label="${esc(t('dashboard.sub'))}">${items.map((a) => `
+    <a class="dash-action ${a.cls || ''}" href="${esc(a.href)}">
+      <span class="dash-action-ic" aria-hidden="true">${icon(a.ic)}${a.badge ? `<span class="dash-action-badge">${esc(fmtNum(a.badge))}</span>` : ''}</span>
+      <span class="dash-action-txt"><b>${esc(a.label)}</b><span>${esc(a.sub)}</span></span>
+    </a>`).join('')}</nav>`;
+}
+
 function shortcutsHtml(user) {
   const items = [
     { href: '#/scan', ic: 'scan', label: t('btn.scan'), cls: 'primary' },
@@ -410,7 +449,7 @@ function overdueHtml(openLoans) {
 }
 
 function lowStockHtml(articles) {
-  const list = articles.filter((a) => a.low_stock)
+  const list = articles.filter((a) => a.low_stock && !isUncounted(a))
     .sort((a, b) => (Number(a.stock) - Number(a.min_stock || 0)) - (Number(b.stock) - Number(b.min_stock || 0)));
   if (!list.length) return section(t('dashboard.lowTitle'), noneCard(t('dashboard.lowNone')));
   return section(t('dashboard.lowTitle'), `<div class="list">${list.slice(0, 8).map((a) => `
@@ -541,24 +580,40 @@ export const routes = {
     const org = orgRes.ok ? orgRes.v : null;
     if (!orgRes.ok && !orgErrorShown) { orgErrorShown = true; toast(errorText(orgRes.err), 'error'); }
     if (!el.isConnected) return;
+    const hasOverdue = openLoans.some((l) => l.overdue);
+    const hasLow = articles.some((a) => a.low_stock && !isUncounted(a));
+    let moreOpen = false;
+    try { moreOpen = localStorage.getItem('lgr-dash-more') === '1'; } catch (e) { /* ohne Speicher */ }
 
     el.innerHTML = `<div class="page">
       ${head}
       ${myLoansHtml(mine)}
+      ${actionsHtml(user, org)}
       ${quickHtml(org)}
-      ${orgRes.ok ? '' : `<p class="small muted" role="status" style="margin:0">${esc(t('dashboard.orgStatsMissing'))}</p>`}
-      ${statsHtml({ machines, articles, openLoans, org })}
-      ${shortcutsHtml(user)}
-      <div class="grid-2">
-        ${overdueHtml(openLoans)}
-        ${lowStockHtml(articles)}
-      </div>
-      <div class="grid-2">
-        ${movementsHtml(movements)}
-        ${returnsHtml(returns)}
-      </div>
-      ${activityHtml(activityEvents(recentLoans, returns, movements))}
+      ${hasOverdue || hasLow ? `<div class="grid-2">
+        ${hasOverdue ? overdueHtml(openLoans) : ''}
+        ${hasLow ? lowStockHtml(articles) : ''}
+      </div>` : ''}
+      <details class="dash-more" data-more${moreOpen ? ' open' : ''}>
+        <summary>${icon('chevron')}<span>${esc(t('dashboard.more'))}</span></summary>
+        <div class="dash-more-body">
+          ${orgRes.ok ? '' : `<p class="small muted" role="status" style="margin:0">${esc(t('dashboard.orgStatsMissing'))}</p>`}
+          ${statsHtml({ machines, articles, openLoans, org })}
+          ${shortcutsHtml(user)}
+          <div class="grid-2">
+            ${hasOverdue ? '' : overdueHtml(openLoans)}
+            ${hasLow ? '' : lowStockHtml(articles)}
+          </div>
+          <div class="grid-2">
+            ${movementsHtml(movements)}
+            ${returnsHtml(returns)}
+          </div>
+          ${activityHtml(activityEvents(recentLoans, returns, movements))}
+        </div>
+      </details>
     </div>`;
+    const more = el.querySelector('[data-more]');
+    more.addEventListener('toggle', () => { try { localStorage.setItem('lgr-dash-more', more.open ? '1' : '0'); } catch (e) { /* ohne Speicher */ } });
 
     el.querySelector('[data-dash-search]').addEventListener('submit', (e) => {
       e.preventDefault();
@@ -568,6 +623,8 @@ export const routes = {
     el.querySelectorAll('[data-scroll]').forEach((b) => b.addEventListener('click', () => {
       const target = document.getElementById(b.dataset.scroll);
       if (!target) return;
+      const det = target.closest('details');
+      if (det) det.open = true;
       // Sprung ohne Animation (zuverlässig, auch bei «weniger Bewegung»); Fokus für Tastatur/Screenreader auf den Titel
       target.scrollIntoView({ block: 'start' });
       const h = target.querySelector('h2[tabindex]');

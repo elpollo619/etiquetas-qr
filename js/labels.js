@@ -154,8 +154,8 @@ export function labelItem(kind, row) {
     const parts = String(row.path || row.name || '').split(' / ');
     return {
       kind, code: row.code, qrText: qrUrl(row.code),
-      cat: t('loc.' + row.type), title: clean(row.name), big: row.code,
-      loc: parts.length > 1 ? parts.slice(0, -1).join(' / ') : '', use: '', foot: '',
+      cat: t('loc.' + row.type), title: clean(row.name), big: clean(row.code_path) || row.code,
+      loc: parts.length > 1 ? parts.slice(0, -1).join(' / ') : '', use: '', foot: clean(row.code_path) ? row.code : '',
     };
   }
   return {

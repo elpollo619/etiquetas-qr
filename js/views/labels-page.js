@@ -10,7 +10,7 @@ registerStrings({
     'labelsPage.tabArticles': 'Artikel',
     'labelsPage.tabLocations': 'Lagerorte',
     'labelsPage.search': 'Name, Code oder Ort suchen…',
-    'labelsPage.selectAll': 'Alle auswählen',
+    'labelsPage.selectAll': 'Alle auswählen', 'labelsPage.room': 'Raum', 'labelsPage.allRooms': 'Alle Räume', 'labelsPage.noRoom': 'Ohne Lagerort',
     'labelsPage.clear': 'Auswahl aufheben',
     'labelsPage.selected': '{n} ausgewählt',
     'labelsPage.selectedTotal': 'Total ausgewählt: {n}',
@@ -31,7 +31,7 @@ registerStrings({
     'labelsPage.tabArticles': 'Artigos',
     'labelsPage.tabLocations': 'Localizações',
     'labelsPage.search': 'Pesquisar nome, código ou local…',
-    'labelsPage.selectAll': 'Selecionar todos',
+    'labelsPage.selectAll': 'Selecionar todos', 'labelsPage.room': 'Sala', 'labelsPage.allRooms': 'Todas as salas', 'labelsPage.noRoom': 'Sem local',
     'labelsPage.clear': 'Limpar seleção',
     'labelsPage.selected': '{n} selecionados',
     'labelsPage.selectedTotal': 'Total selecionado: {n}',
@@ -52,7 +52,7 @@ registerStrings({
     'labelsPage.tabArticles': 'Artículos',
     'labelsPage.tabLocations': 'Ubicaciones',
     'labelsPage.search': 'Buscar nombre, código o ubicación…',
-    'labelsPage.selectAll': 'Seleccionar todo',
+    'labelsPage.selectAll': 'Seleccionar todo', 'labelsPage.room': 'Sala', 'labelsPage.allRooms': 'Todas las salas', 'labelsPage.noRoom': 'Sin ubicación',
     'labelsPage.clear': 'Quitar selección',
     'labelsPage.selected': '{n} seleccionados',
     'labelsPage.selectedTotal': 'Total seleccionado: {n}',
@@ -83,11 +83,11 @@ function loader(api, type) {
   return api.listLocations();
 }
 function subLine(type, r) {
-  if (type === 'location') return [r.path && r.path !== r.name ? r.path : '', locTypeLabel(r.type)].filter(Boolean).join(' · ');
+  if (type === 'location') return [r.code_path || '', r.path && r.path !== r.name ? r.path : '', locTypeLabel(r.type)].filter(Boolean).join(' · ');
   return [r.location_path, r.category].filter(Boolean).join(' · ');
 }
 function hay(type, r) {
-  return norm(`${r.code} ${r.name} ${type === 'location' ? r.path || '' : r.location_path || ''} ${r.category || ''} ${r.brand || ''} ${r.model || ''}`);
+  return norm(`${r.code} ${r.code_path || r.location_code_path || ''} ${r.name} ${type === 'location' ? r.path || '' : r.location_path || ''} ${r.category || ''} ${r.brand || ''} ${r.model || ''}`);
 }
 
 // ---------- Route ----------
@@ -105,6 +105,9 @@ async function labelsRoute(ctx) {
   const qType = q(ctx, 'type');
   let type = TYPES.some((x) => x.key === qType) ? qType : 'machine';
   let search = '';
+  let room = q(ctx, 'raum') || '';          // '' = alle, 'none' = ohne Lagerort, sonst id des Raums
+  let rootOf = new Map();                  // Lagerort-id → id des Raums (oberster Lagerort)
+  let rooms = [];
   const preCodes = new Set(String(q(ctx, 'codes') || q(ctx, 'code') || '').split(',').map((s) => s.trim().toUpperCase()).filter(Boolean));
 
   el.innerHTML = `<div class="page">
@@ -114,7 +117,11 @@ async function labelsRoute(ctx) {
       ${TYPES.map((x) => `<button type="button" class="tab" role="tab" id="lbl-tab-${x.key}" aria-controls="lbl-panel" data-type="${x.key}"></button>`).join('')}
     </div>
     <div id="lbl-panel" role="tabpanel" class="stack">
-      <div class="searchbar">${icon('search')}<input type="search" data-search placeholder="${esc(t('labelsPage.search'))}" aria-label="${esc(t('labelsPage.search'))}"></div>
+      <div class="row" style="gap:10px;flex-wrap:wrap">
+        <div class="searchbar" style="flex:1;min-width:220px">${icon('search')}<input type="search" data-search placeholder="${esc(t('labelsPage.search'))}" aria-label="${esc(t('labelsPage.search'))}"></div>
+        <label class="row" style="gap:6px;align-items:center"><span class="muted small">${esc(t('labelsPage.room'))}</span>
+          <select data-room aria-label="${esc(t('labelsPage.room'))}"><option value="">${esc(t('labelsPage.allRooms'))}</option></select></label>
+      </div>
       <div class="row" style="justify-content:space-between">
         <label class="check"><input type="checkbox" data-all> <span>${esc(t('labelsPage.selectAll'))}</span></label>
         <div class="row"><span class="muted small" data-count role="status"></span>
@@ -135,9 +142,16 @@ async function labelsRoute(ctx) {
 
   const total = () => [...selected.values()].reduce((n, m) => n + m.size, 0);
   const visibleRows = () => {
-    const rows = cache.get(type) || [];
+    let rows = cache.get(type) || [];
+    if (room) {
+      const locOf = (r) => (type === 'location' ? r.id : type === 'machine' ? r.home_location_id : r.location_id);
+      rows = rows.filter((r) => (room === 'none' ? !locOf(r) : rootOf.get(locOf(r)) === room));
+    }
     const qq = norm(search);
-    return qq ? rows.filter((r) => hay(type, r).includes(qq)) : rows;
+    if (qq) rows = rows.filter((r) => hay(type, r).includes(qq));
+    // Lagerorte in der Reihenfolge des lesbaren Codes (G1, G1-RG01, G1-RG01-BX01 …) – so kommen die Etiketten sortiert heraus
+    if (type === 'location') rows = [...rows].sort((a, b) => String(a.code_path || a.path || '').localeCompare(String(b.code_path || b.path || ''), 'de', { numeric: true }));
+    return rows;
   };
 
   function updateCounts() {
@@ -248,6 +262,22 @@ async function labelsRoute(ctx) {
     renderList();
   });
   el.querySelectorAll('[data-create]').forEach((b) => b.addEventListener('click', create));
+
+  // Räume für den Filter (ein Raum = oberster Lagerort); Fehler hier blockiert die Seite nicht
+  const roomSel = $('[data-room]');
+  roomSel.addEventListener('change', () => { room = roomSel.value; renderList(); });
+  Promise.resolve().then(() => api.listLocations()).then((locs) => {
+    const byId = new Map((locs || []).map((l) => [l.id, l]));
+    const top = (l) => { let x = l, n = 0; while (x && x.parent_id && byId.has(x.parent_id) && n++ < 20) x = byId.get(x.parent_id); return x; };
+    rootOf = new Map((locs || []).map((l) => [l.id, (top(l) || l).id]));
+    rooms = (locs || []).filter((l) => !l.parent_id && !l.archived)
+      .sort((a, b) => String(a.code_path || a.name).localeCompare(String(b.code_path || b.name), 'de', { numeric: true }));
+    roomSel.innerHTML = `<option value="">${esc(t('labelsPage.allRooms'))}</option>`
+      + rooms.map((l) => `<option value="${esc(l.id)}">${esc([l.code_path, l.name].filter(Boolean).join(' · '))}</option>`).join('')
+      + `<option value="none">${esc(t('labelsPage.noRoom'))}</option>`;
+    if (room && (room === 'none' || rooms.some((l) => l.id === room))) roomSel.value = room; else room = '';
+    renderList();
+  }).catch(() => { /* ohne Raumfilter weiter */ });
 
   await show(type);
 }

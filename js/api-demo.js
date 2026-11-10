@@ -4,6 +4,7 @@
 // «Lager organisieren» (Kategorien, Fotos, KI-Import, Prüfung, Aufgaben, Bereiche, Sets, Pläne, Standorte): js/api-demo-org.js.
 // Einkaufsliste (shopping_items, shopping_overview, article_consumption, Trigger article_shopping_sync): hier, weil
 // jede Bestandsänderung (Entnahme, Zugang, Korrektur, Inventur) sie nachführt.
+// Bedarf je Maschine (machine_supplies, machine_supply_overview): ebenfalls hier.
 import { installOrgDemo, upgradeDb, completeDb, seedCategories, orgViewIndex, orgInUse, orgAfterDelete } from './api-demo-org.js';
 
 export const STORAGE_KEY = 'lgr-demo:v1';   // Schlüssel bleibt; der Datenstand trägt seine eigene Version
@@ -46,6 +47,8 @@ const MOVEMENT_COLS = ['id', 'article_id', 'type', 'qty', 'stock_before', 'stock
   'user_id', 'note', 'request_id', 'created_at'];
 const SHOPPING_COLS = ['id', 'article_id', 'name', 'qty', 'unit', 'note', 'status', 'source', 'created_by', 'created_at',
   'updated_at', 'ordered_by', 'ordered_at', 'done_by', 'done_at'];
+const SUPPLY_COLS = ['id', 'machine_id', 'article_id', 'note', 'created_by', 'created_at'];   // machine_supplies
+const SUPPLY_NOTE_MAX = 300;                          // machine_supplies_note_check
 const SHOPPING_STATUS = ['offen', 'bestellt', 'erledigt', 'verworfen'];
 const SHOPPING_OPEN = ['offen', 'bestellt'];          // shopping_items_open_article_uniq: je Artikel höchstens ein solcher Eintrag
 const SHOPPING_DONE_LIMIT = 40;                       // listShopping({ status: 'done' }): die letzten 40
@@ -218,6 +221,7 @@ function emptyDb() {
     categories: [], photos: [], detections: [], photo_hotspots: [], org_tasks: [], set_components: [], floor_plans: [],
     sites: [],
     shopping_items: [],           // Einkaufsliste
+    machine_supplies: [],         // Bedarf je Maschine (Maschine ↔ Artikel)
   };
 }
 
@@ -575,6 +579,22 @@ export function createApi({ LgrError = FallbackLgrError, storage, storageKey = S
       article_product_url: f('product_url'), article_location_path: f('location_path'),
       article_location_code_path: f('location_code_path'), article_photo_path: f('photo_path'),
       created_by_name: c.name(s.created_by), ordered_by_name: c.name(s.ordered_by), done_by_name: c.name(s.done_by),
+    };
+  }
+  // machine_supply_overview: Verknüpfung + Angaben aus article_overview und machine_overview (innere Joins:
+  // beide Seiten gibt es immer, weil Löschen die Verknüpfung mitnimmt)
+  function vSupply(s, c) {
+    const a = c.articles.has(s.article_id) ? vArticle(c.articles.get(s.article_id), c) : null;
+    const m = c.machines.has(s.machine_id) ? vMachine(c.machines.get(s.machine_id), c) : null;
+    if (!a || !m) return null;
+    return {
+      ...pick(s, SUPPLY_COLS),
+      article_code: a.code, article_name: a.name, article_unit: a.unit, article_stock: a.stock,
+      article_min_stock: a.min_stock, article_low_stock: a.low_stock, article_archived: a.archived,
+      article_notes: a.notes, article_location_path: a.location_path,
+      article_location_code_path: a.location_code_path, article_photo_path: a.photo_path,
+      machine_code: m.code, machine_name: m.name, machine_archived: m.archived,
+      machine_location_path: m.location_path, machine_photo_path: m.photo_path,
     };
   }
   function getView(kind, col, val) {
@@ -1004,6 +1024,39 @@ export function createApi({ LgrError = FallbackLgrError, storage, storageKey = S
     return row.id;
   }
 
+  // ---- Bedarf je Maschine (machine_supplies; Trigger set_created_by, audit_row) ----
+  // saveSupply: Eingaben wie js/api-supabase.js prüfen, dann wie die Datenbank (RLS machine_supplies_insert/_update:
+  // nur Lagerverantwortliche/Admins; eindeutig je Maschine + Artikel; Fremdschlüssel). Ändern lässt sich nur die Notiz.
+  function coreSaveSupply(obj) {
+    if (!obj || typeof obj !== 'object') throw E('invalid_value');
+    const note = has(obj, 'note') ? trimOrNull(obj.note) : undefined;
+    if (note && note.length > SUPPLY_NOTE_MAX) throw E('invalid_value');
+    if (!obj.id) {
+      if (!isUuid(obj.machine_id) || !isUuid(obj.article_id)) throw E('not_found');
+      if (!isStaff()) throw E('not_authorized');
+      if (db.machine_supplies.some((s) => s.machine_id === obj.machine_id && s.article_id === obj.article_id)) {
+        throw E('duplicate', 'supply');   // machine_supplies_pair_uniq
+      }
+      if (!db.machines.some((m) => m.id === obj.machine_id) || !db.articles.some((a) => a.id === obj.article_id)) throw E('not_found');
+      const row = {
+        id: uuid(), machine_id: obj.machine_id, article_id: obj.article_id, note: note ?? null,
+        created_by: uid(), created_at: nowIso(),
+      };
+      db.machine_supplies.push(row);
+      audit('insert', 'machine_supplies', row.id, omit(row, ['created_at']));
+      return row.id;
+    }
+    if (!isUuid(obj.id)) throw E('not_found');
+    const row = db.machine_supplies.find((s) => s.id === obj.id) || null;
+    if (!row || !canRead()) throw E('not_found');   // für Nicht-Freigegebene unsichtbar (RLS)
+    if (note !== undefined) {
+      if (!isStaff()) throw E('not_authorized');
+      const diff = applyPatch(row, { note });
+      if (Object.keys(diff).length) audit('update', 'machine_supplies', row.id, diff);
+    }
+    return row.id;
+  }
+
   // ---- Mitarbeiter ----
   function coreUpdateMyProfile({ full_name, lang } = {}) {
     const p = me();
@@ -1239,6 +1292,10 @@ export function createApi({ LgrError = FallbackLgrError, storage, storageKey = S
       name: 'Kärcher Nass-/Trockensauger WD 5', category: 'Reinigung', brand: 'Kärcher', model: 'WD 5',
       serial_no: '0102-5571', inventory_no: 'W-1007', loc: 'hauptlager',
     });
+
+    // Bedarf je Maschine: beide Akku-Schrauber brauchen die Schrauben 4×40 (einmal mit Hinweis, einmal ohne)
+    at(D(-45, 10, 20), U.luca, () => coreSaveSupply({ machine_id: R.hilti, article_id: R.schrauben, note: 'Bit Torx T20' }));
+    at(D(-45, 10, 21), U.luca, () => coreSaveSupply({ machine_id: R.schlagschrauber, article_id: R.schrauben }));
 
     // Fotos (Platzhalter)
     at(D(-45, 10, 30), U.cristian, photo('machine', 'bohrhammer', 'Bosch GBH 2-28', 210, U.cristian));
@@ -1530,6 +1587,39 @@ export function createApi({ LgrError = FallbackLgrError, storage, storageKey = S
           .sort(newestFirst('created_at'))
           .slice(0, n)
           .map((mv) => vMovement(mv, c));
+      });
+    },
+
+    // ---- Bedarf je Maschine (Verbrauchsmaterial/Zubehör, das ein Gerät braucht) ----
+    // Zeilen wie machine_supply_overview, nach Artikelname, Maschinenname, id; lesen alle Freigegebenen
+    async listSupplies({ machineId, articleId } = {}) {
+      return read(() => {
+        if (machineId && !isUuid(machineId)) return [];
+        if (articleId && !isUuid(articleId)) return [];
+        if (!canRead()) return [];
+        const c = viewCtx();
+        return db.machine_supplies
+          .filter((s) => (!machineId || s.machine_id === machineId) && (!articleId || s.article_id === articleId))
+          .map((s) => vSupply(s, c))
+          .filter(Boolean)
+          .sort((a, b) => cmp(a.article_name, b.article_name) || cmp(a.machine_name, b.machine_name) || byId(a, b));
+      });
+    },
+    async saveSupply(obj) {
+      return mutate(() => {
+        const id = coreSaveSupply(obj);
+        const out = vSupply(db.machine_supplies.find((s) => s.id === id), viewCtx());
+        if (!out) throw E('not_found');
+        return out;
+      });
+    },
+    async deleteSupply(id) {
+      return mutate(() => {
+        const row = isUuid(id) ? db.machine_supplies.find((s) => s.id === id) : null;
+        if (!row || !canRead()) throw E('not_found');   // für Nicht-Freigegebene unsichtbar (RLS)
+        if (!isStaff()) throw E('not_authorized');      // machine_supplies_delete
+        db.machine_supplies = db.machine_supplies.filter((s) => s.id !== id);
+        audit('delete', 'machine_supplies', row.id, row);
       });
     },
 

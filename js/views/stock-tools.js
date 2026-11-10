@@ -5,7 +5,7 @@
 //                 sie werden sofort dorthin verschoben (mit «Rückgängig»). Nur Lagerverantwortliche/Admins.
 import { t, registerStrings, fmtQty, fmtNum, unitLabel } from '../i18n.js';
 import { esc, clean, uuid, can, toast, sheet, errorText, emptyHtml, thumbHtml, hydrateThumbs, icon, debounce, numOrNull } from '../util.js';
-import { consumptionMap, coverDays, coverText, suggestQty } from '../consumption.js';
+import { consumptionMap, coverDays, coverText, suggestQty, stockState, STATE_PILL, STATE_LABEL } from '../consumption.js';
 
 registerStrings({
   de: {
@@ -115,22 +115,11 @@ const norm = (s) => clean(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, 
 function showError(ctx, err) {
   ctx.el.innerHTML = `<div class="page"><div class="alert danger" role="alert">${icon('alert')}<span>${esc(errorText(err))}</span></div></div>`;
 }
-const UNCOUNTED_RE = /Menge noch nicht gezählt/;
 const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
 
 // ---------------------------------------------------------------------------
 // Verbrauchsmaterial
 // ---------------------------------------------------------------------------
-function stockState(a) {
-  const s = num(a.stock), min = num(a.min_stock);
-  if (s <= 0 && UNCOUNTED_RE.test(a.notes || '')) return 'uncounted';
-  if (s <= 0) return 'empty';
-  if (s <= min) return 'refill';
-  if (s <= min * 1.25) return 'low';
-  return 'ok';
-}
-const STATE_PILL = { ok: 'pill-ok', low: 'pill-info', refill: 'pill-warn', empty: 'pill-danger', uncounted: 'pill-muted' };
-const STATE_LABEL = { ok: 'stock.ok', low: 'stock.low', refill: 'stock.refill', empty: 'stock.empty', uncounted: 'stock.uncounted' };
 const uiStock = { q: '', filter: 'all', site: 'all' };
 
 async function stockView(ctx) {

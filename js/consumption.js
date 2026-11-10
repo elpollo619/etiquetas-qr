@@ -62,3 +62,22 @@ export function suggestQty(a) {
   const min = Number(a && a.min_stock) || 0, stock = Number(a && a.stock) || 0;
   return Math.min(Math.max(Math.ceil(min * 2 - stock), 1), 999999999);
 }
+
+// Zustand eines Bestandsartikels: 'uncounted' (0 + Notiz «Menge noch nicht gezählt»), 'empty', 'refill' (<= Mindestbestand,
+// wie article_overview.low_stock), 'low' (bis 25 % darüber), 'ok'. Texte: stock.* (js/views/stock-tools.js).
+const UNCOUNTED_RE = /Menge noch nicht gezählt/;
+const n0 = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
+export function isUncounted(a) { return n0(a && a.stock) <= 0 && UNCOUNTED_RE.test((a && a.notes) || ''); }
+export function stockState(a) {
+  const s = n0(a && a.stock);
+  const hasMin = a && a.min_stock !== null && a.min_stock !== undefined && a.min_stock !== '';
+  const min = n0(a && a.min_stock);
+  if (isUncounted(a)) return 'uncounted';
+  if (s <= 0) return 'empty';
+  if (!hasMin) return 'ok';
+  if (s <= min) return 'refill';
+  if (s <= min * 1.25) return 'low';
+  return 'ok';
+}
+export const STATE_PILL = { ok: 'pill-ok', low: 'pill-info', refill: 'pill-warn', empty: 'pill-danger', uncounted: 'pill-muted' };
+export const STATE_LABEL = { ok: 'stock.ok', low: 'stock.low', refill: 'stock.refill', empty: 'stock.empty', uncounted: 'stock.uncounted' };

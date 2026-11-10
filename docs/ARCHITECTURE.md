@@ -311,6 +311,20 @@ api.deleteShoppingItem(id)
 api.listConsumption()                          → [{ article_id, used_90d, takes_90d, first_take_at, last_take_at }]
 api.saveArticle({ …, reorder_qty })            Nachkaufmenge (> 0 oder null)
 ```
+- **Bedarf je Maschine** (js/supplies.js): Tabelle `machine_supplies` (machine_id, article_id, note; je Paar einmal) – welches
+  Verbrauchsmaterial/Zubehör ein Gerät braucht (Staubsaugerbeutel, Toner, Sägeblätter). Maschinenkarte: Abschnitt «Braucht
+  dieses Material» mit Bestand und «−1» (alle aktiven), verknüpfen/lösen nur Lagerverantwortliche. Artikelkarte: «Wird gebraucht
+  für». Ansicht `machine_supply_overview` (+ Artikel- und Maschinenangaben).
+```
+api.listSupplies({ machineId?, articleId? })   → machine_supply_overview
+api.saveSupply({ id?, machine_id, article_id, note }) → Zeile ('duplicate', wenn schon verknüpft)
+api.deleteSupply(id)
+```
+- **Übersicht einfach** (js/views/dashboard.js): oben fünf grosse Aktionen (Scannen, Suchen, Material nehmen, Einkaufsliste,
+  Einräumen bzw. Ausgeliehen); Kennzahlen/Verlauf in einem aufklappbaren Teil (Zustand in localStorage `lgr-dash-more`).
+  Menü in zwei Gruppen «Alltag» / «Verwalten»; untere Leiste: Übersicht · Suche · Scannen · Material · Mehr.
+- **Etiketten** (`#/etiketten?raum=<id>`): Filter «Raum» → alle Etiketten eines Raums in Code-Reihenfolge; das Etikett eines
+  Lagerorts zeigt gross den lesbaren Code (B8-SC10-BX04), klein den dauerhaften (L-0123).
 
 ## Ansichten (js/views/*.js)
 

@@ -11,6 +11,7 @@ import {
 import * as media from '../media.js';
 import * as labels from '../labels.js';
 import { consumptionMap, coverDays, coverText, coverSpanDays, suggestQty } from '../consumption.js';
+import { mountUsedFor } from '../supplies.js';
 import { categoryOptionsHtml, categorySubtreeIds, confidencePill, sourceLabel } from '../org-common.js';
 
 // ---------------------------------------------------------------------------
@@ -1236,10 +1237,12 @@ async function cardView(ctx) {
       <div data-det-body></div>
     </section>
 
+    <div data-usedfor hidden></div>
     <div data-media></div>
   </div>`;
   const root = ctx.el.firstElementChild;
   mountDetections(root.querySelector('[data-det]'), api, a.id, a.name, a.unit);
+  mountUsedFor(root.querySelector('[data-usedfor]'), ctx, a);
 
   // Hero: Foto (antippen = gross) oder QR-Code
   const qrBox = root.querySelector('[data-qr]');

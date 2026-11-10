@@ -235,6 +235,7 @@ export function completeDb(db) {
   fill(db.locations, { short_code: null, responsible_id: null, organized_at: null, organized_by: null, cover_photo_id: null, site_id: null });
   // Einkaufsliste kam ebenfalls ohne neue Version dazu: leere Liste, Artikel ohne Nachkaufmenge
   if (!Array.isArray(db.shopping_items)) db.shopping_items = [];
+  if (!Array.isArray(db.machine_supplies)) db.machine_supplies = [];   // Bedarf je Maschine: ebenso
   fill(db.articles, { category_id: null, product_url: null, reorder_qty: null });
   fill(db.machines, { category_id: null, responsible_id: null, is_set: false, product_url: null });
   fill(db.inventories, { location_id: null });
@@ -329,9 +330,11 @@ export function orgAfterDelete(db, table, id, audit) {
   } else if (table === 'machines') {
     drop('set_components', (c) => c.set_id === id);
     setNull('detections', 'machine_id');
+    drop('machine_supplies', (s) => s.machine_id === id);   // Bedarf je Maschine: on delete cascade
   } else if (table === 'articles') {
     setNull('detections', 'article_id');
     drop('shopping_items', (s) => s.article_id === id);   // Einkaufsliste: on delete cascade
+    drop('machine_supplies', (s) => s.article_id === id);   // Bedarf je Maschine: on delete cascade
   }
 }
 

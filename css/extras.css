@@ -149,3 +149,39 @@ details[data-done-sec] > summary { cursor: pointer; list-style: revert; }
   .shop-btns .btn { min-height: 40px; }
 }
 .shop-list > li:not(.list-item) { list-style: none; }
+
+/* ---- Übersicht: fünf grosse Aktionen, Rest aufklappbar ---- */
+.dash-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+@media (min-width: 760px) { .dash-actions { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
+.dash-action { display: flex; flex-direction: column; gap: 10px; padding: 16px 14px; border-radius: var(--radius); min-height: 112px;
+  background: var(--surface); border: 1px solid var(--border); color: var(--text); text-decoration: none; box-shadow: var(--shadow); }
+.dash-action:hover, .dash-action:focus-visible { border-color: var(--border-strong); }
+.dash-action.primary { background: var(--primary); color: var(--primary-ink); border-color: var(--primary); }
+.dash-action.primary:first-child { grid-column: 1 / -1; flex-direction: row; align-items: center; min-height: 76px; }
+@media (min-width: 760px) { .dash-action.primary:first-child { grid-column: auto; flex-direction: column; align-items: flex-start; min-height: 112px; } }
+.dash-action-ic { position: relative; display: inline-flex; width: 40px; height: 40px; border-radius: 12px; align-items: center; justify-content: center;
+  background: var(--surface-2); flex: none; }
+.dash-action.primary .dash-action-ic { background: rgba(255, 255, 255, .16); }
+.dash-action-ic .ic { width: 22px; height: 22px; }
+.dash-action-badge { position: absolute; top: -6px; right: -8px; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px;
+  background: var(--danger); color: #fff; font-size: 12px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
+.dash-action-txt { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.dash-action-txt b { font-size: 16px; font-weight: 700; }
+.dash-action-txt span { font-size: 13px; color: var(--muted); }
+.dash-action.primary .dash-action-txt span { color: inherit; opacity: .8; }
+.dash-more { border-top: 1px solid var(--border); padding-top: 6px; }
+.dash-more > summary { display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 10px 2px; font-weight: 650; color: var(--muted); list-style: none; }
+.dash-more > summary::-webkit-details-marker { display: none; }
+.dash-more > summary .ic { width: 18px; height: 18px; transition: transform .15s; }
+.dash-more[open] > summary .ic { transform: rotate(90deg); }
+.dash-more-body { display: flex; flex-direction: column; gap: 18px; padding-top: 8px; }
+/* Menü: Zwischentitel je Gruppe */
+.nav-group { font-size: 11.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); padding: 14px 12px 4px; }
+.sidebar .nav-group:first-child { padding-top: 4px; }
+.more-menu .nav-group { grid-column: 1 / -1; padding: 10px 4px 2px; }
+/* Maschinenbedarf */
+.supply-end { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+.supply-list .li-main { text-decoration: none; color: inherit; }
+.supply-list .li-title, .supply-list .li-sub { white-space: normal; overflow-wrap: anywhere; }
+.supply-list .li-sub em { font-style: normal; }
+.supply-row .btn.sm[data-take] { min-width: 48px; min-height: 40px; }

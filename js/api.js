@@ -34,6 +34,7 @@ export const API_METHODS = Object.freeze([
   'listHotspots', 'saveHotspot', 'deleteHotspot', 'listComponents', 'saveComponent', 'deleteComponent',
   'listFloorPlans', 'saveFloorPlan', 'deleteFloorPlan', 'listSites', 'saveSite', 'deleteSite',
   'listShopping', 'saveShoppingItem', 'setShoppingStatus', 'deleteShoppingItem', 'listConsumption',
+  'listSupplies', 'saveSupply', 'deleteSupply',
 ]);
 
 export const SUPABASE_CONFIGURED = Boolean(String(SUPABASE_URL || '').trim() && String(SUPABASE_ANON_KEY || '').trim());
