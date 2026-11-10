@@ -88,7 +88,7 @@ export function unitLabel(u) {
 // ---------------------------------------------------------------------------
 registerStrings({
   de: {
-    'app.name': 'Lager',
+    'app.name': 'Ordo',
     'app.tagline': 'Lagerverwaltung',
     'nav.home': 'Übersicht', 'nav.scan': 'Scannen', 'nav.machines': 'Maschinen', 'nav.articles': 'Artikel',
     'nav.locations': 'Lagerorte', 'nav.loans': 'Ausgeliehene Maschinen', 'nav.loansShort': 'Ausgeliehen',
@@ -196,7 +196,7 @@ registerStrings({
     'lang.label': 'Sprache',
   },
   pt: {
-    'app.name': 'Armazém',
+    'app.name': 'Ordo',
     'app.tagline': 'Gestão de armazém',
     'nav.home': 'Resumo', 'nav.scan': 'Ler QR', 'nav.machines': 'Máquinas', 'nav.articles': 'Artigos',
     'nav.locations': 'Localizações', 'nav.loans': 'Máquinas emprestadas', 'nav.loansShort': 'Emprestadas',
@@ -303,7 +303,7 @@ registerStrings({
     'lang.label': 'Idioma',
   },
   es: {
-    'app.name': 'Almacén',
+    'app.name': 'Ordo',
     'app.tagline': 'Gestión de almacén',
     'nav.home': 'Resumen', 'nav.scan': 'Escanear', 'nav.machines': 'Máquinas', 'nav.articles': 'Artículos',
     'nav.locations': 'Ubicaciones', 'nav.loans': 'Máquinas prestadas', 'nav.loansShort': 'Prestadas',

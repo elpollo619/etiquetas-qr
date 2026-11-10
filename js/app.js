@@ -137,7 +137,7 @@ function renderShell() {
       ${demo ? `<div class="demo-bar" role="note">${icon('alert')}<span>${esc(t('common.demo'))}</span>
         <label>${esc(t('common.demoUser'))} <select id="demoUser" aria-label="${esc(t('common.demoUser'))}"></select></label></div>` : ''}
       <header class="topbar">
-        <a class="brand" href="#/" aria-label="${esc(t('nav.home'))}"><span class="brand-mark">${icon('box')}</span></a>
+        <a class="brand" href="#/" aria-label="${esc(t('nav.home'))}"><span class="brand-mark logo"><img src="icon.svg" alt=""></span></a>
         <div class="title" id="pageTitle"></div>
         <div class="top-actions">
           <a class="icon-btn" href="#/suche" aria-label="${esc(t('nav.search'))}" title="${esc(t('nav.search'))}">${icon('search')}</a>
@@ -297,7 +297,7 @@ function renderAuth(mode = 'login', message = '') {
   setTitle(heading);
   $app().innerHTML = `
     <div class="auth-wrap"><div class="auth-card card">
-      <div class="brand-row"><span class="brand-mark">${icon('box')}</span>
+      <div class="brand-row"><span class="brand-mark logo"><img src="icon.svg" alt=""></span>
         <div style="flex:1"><h1>${esc(t('app.name'))}</h1><div class="muted small">${esc(t('app.tagline'))}</div></div>
         ${langSwitchHtml()}</div>
       ${target && !isRecovery ? `<div class="alert">${icon('scan')}<span>${esc(t('auth.afterLogin', { code: target }))}</span></div>` : ''}
@@ -364,7 +364,7 @@ function renderPending() {
   setTitle(t('auth.pendingTitle'));
   $app().innerHTML = `
     <div class="auth-wrap"><div class="auth-card card">
-      <div class="brand-row"><span class="brand-mark">${icon('box')}</span><div style="flex:1"><h1>${esc(t('app.name'))}</h1></div>${langSwitchHtml()}</div>
+      <div class="brand-row"><span class="brand-mark logo"><img src="icon.svg" alt=""></span><div style="flex:1"><h1>${esc(t('app.name'))}</h1></div>${langSwitchHtml()}</div>
       <div class="alert warn">${icon('clock')}<div><b>${esc(t('auth.pendingTitle'))}</b><p>${esc(t('auth.pendingText'))}</p></div></div>
       <p class="muted small">${esc(me ? me.full_name + ' · ' + (me.email || '') : '')}</p>
       <div class="row">

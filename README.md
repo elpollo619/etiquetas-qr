@@ -1,4 +1,4 @@
-# Lagerverwaltung mit QR-Etiketten
+# Ordo – Lagerverwaltung mit QR-Etiketten
 
 Interne Web-App für Lager, Material, Maschinen und Werkzeuge: QR-Etikett auf die Maschine kleben, mit dem Handy
 scannen, **«Maschine ausleihen»** bzw. **«Maschine zurückgeben»** – jederzeit sichtbar, wer was hat.
